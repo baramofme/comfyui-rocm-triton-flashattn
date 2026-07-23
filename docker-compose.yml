@@ -1,0 +1,46 @@
+services:
+  comfyui-rocm:
+    image: comfyui-rocm:latest
+    container_name: comfyui_gpu0
+    restart: unless-stopped
+
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri/card2:/dev/dri/card2
+      - /dev/dri/renderD130:/dev/dri/renderD130
+
+    group_add:
+      - video
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 60G
+    # memswap_limit: 60G
+
+    ports:
+      - "8189:8188"
+
+    environment:
+      - COMFYUI_ARGS=--listen 0.0.0.0 --preview-method auto --disable-pinned-memory --use-flash-attention
+      - HIP_VISIBLE_DEVICES=0
+
+    volumes:
+      - /mnt/nvmedata/comfy/hf-hub:/root/.cache/huggingface/hub
+      - /mnt/nvmedata/comfy/torch-hub:/root/.cache/torch/hub
+      - /mnt/nvmedata/comfy/models:/workspace/models
+      - /mnt/nvmedata/comfy/input:/workspace/input
+      - /mnt/nvmedata/comfy/output:/workspace/output
+      - /mnt/nvmedata/comfy/user/default/workflows:/workspace/user/default/workflows
+      # - /mnt/nvmedata/comfy/custom_nodes:/workspace/custom_nodes
+
+    networks:
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true
