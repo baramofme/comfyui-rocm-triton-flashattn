@@ -9,6 +9,7 @@ ENV MIOPEN_FIND_ENFORCE=1 \
     COMFYUI_ENABLE_MIOpen=1 \
     FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE \
     AITER_TRITON_ONLY=1 \
+    AITER_USE_SYSTEM_TRITON=1 \
     PYTORCH_ALLOC_CONF=expandable_segments:True \
     MALLOC_MMAP_THRESHOLD_=65536 \
     MALLOC_TRIM_THRESHOLD_=65536
@@ -53,7 +54,7 @@ ENV PIP_CONSTRAINT=/opt/venv/pip-constraints.txt
 # ponytail: ComfyUI-Manager ROCm protection - prevent CUDA torch overwrite
 RUN mkdir -p /workspace/user/__manager && \
     printf 'torch\ntriton\nflash-attn\n' > /workspace/user/__manager/pip_blacklist.list && \
-    printf '[default]\nmodel_download_by_agent = True\nsecurity_level = weak\nallow_git_url_install = True\nallow_pip_install = True\n' > /workspace/user/__manager/config.ini
+    printf '[default]\nmodel_download_by_agent = True\nsecurity_level = weak\nnetwork_mode = personal_cloud\nallow_git_url_install = True\nallow_pip_install = True\n' > /workspace/user/__manager/config.ini
 
 # ponytail: save ROCm triton binary before flash-attn install.
 # flash-attn's setup.py (via aiter subprocess) replaces the ROCm-optimized
@@ -63,12 +64,12 @@ RUN cp /opt/venv/lib/python3.12/site-packages/triton/_C/libtriton.so /tmp/libtri
     git clone --depth 1 https://github.com/Dao-AILab/flash-attention.git /tmp/flash-attention && \
     cd /tmp/flash-attention && \
     sed -i '/subprocess.run.*pip.*install.*third_party\/aiter/s/^/#/' setup.py && \
-    pip install --no-cache-dir packaging ninja einops && \
+    pip install --no-cache-dir packaging ninja einops pybind11 && \
     pip install --no-cache-dir --no-build-isolation --no-deps . && \
     cp /tmp/libtriton_rocm.so /opt/venv/lib/python3.12/site-packages/triton/_C/libtriton.so && \
     cd / && rm -rf /tmp/flash-attention /tmp/libtriton_rocm.so
 
-RUN echo '#!/bin/bash\nset -e\nexec python main.py \\\n    --listen 0.0.0.0 \\\n    --port ${PORT:-8188} \\\n    --disable-api-nodes \\\n    --cache-none \\\n    --disable-smart-memory \\\n    --disable-pinned-memory \\\n    --enable-manager \\\n    --enable-manager-legacy-ui \\\n    ${CLI_ARGS}' > /opt/entrypoint.sh
+RUN echo '#!/bin/bash\nset -e\nmkdir -p /workspace/user/__manager\nprintf "[default]\\nmodel_download_by_agent = True\\nsecurity_level = weak\\nnetwork_mode = personal_cloud\\nallow_git_url_install = True\\nallow_pip_install = True\\n" > /workspace/user/__manager/config.ini\nprintf "torch\\ntriton\\nflash-attn\\n" > /workspace/user/__manager/pip_blacklist.list\nexec python main.py \\\n    --listen 0.0.0.0 \\\n    --port ${PORT:-8188} \\\n    --disable-api-nodes \\\n    --cache-none \\\n    --disable-mmap \\\n    --enable-manager \\\n    --enable-manager-legacy-ui \\\n    ${CLI_ARGS}' > /opt/entrypoint.sh
 
 RUN chmod +x /opt/entrypoint.sh
 
