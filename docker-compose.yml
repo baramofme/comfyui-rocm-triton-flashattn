@@ -1,6 +1,6 @@
 services:
   comfyui-rocm:
-    image: comfyui-rocm:latest
+    image: ${COMFYUI_IMAGE:-comfyui-rocm}:${COMFYUI_VERSION:-latest}
     container_name: comfyui_gpu0
     restart: unless-stopped
 
@@ -41,6 +41,7 @@ services:
     networks:
       - dokploy-network
 
-networks:
-  dokploy-network:
-    external: true
+# only for dokploy
+#networks:
+#  dokploy-network:
+#    external: true
