@@ -16,7 +16,7 @@ ENV MIOPEN_FIND_ENFORCE=1 \
     AITER_TRITON_ONLY=1 \
     HIP_FORCE_DEV_KERNARG=1 \
     HSA_FORCE_FINE_GRAIN_PCIE=1 \
-    PYTORCH_ALLOC_CONF=expandable_segments:True \
+    PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.8 \
     MALLOC_MMAP_THRESHOLD_=65536 \
     MALLOC_TRIM_THRESHOLD_=65536
 

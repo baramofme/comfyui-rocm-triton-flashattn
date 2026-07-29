@@ -93,7 +93,7 @@ docker compose up -d
 | `AITER_TRITON_ONLY` | `1` | Use only Triton kernels for AITER (avoids CDNA-only HIP kernels) |
 | `MALLOC_MMAP_THRESHOLD_` | `65536` | Prevent glibc memory fragmentation OOM |
 | `MALLOC_TRIM_THRESHOLD_` | `65536` | Prevent glibc memory fragmentation OOM |
-| `PYTORCH_ALLOC_CONF` | `expandable_segments:True` | Optimizes PyTorch memory allocation for ROCm |
+| `PYTORCH_HIP_ALLOC_CONF` | `expandable_segments:True,garbage_collection_threshold:0.8` | ROCm 메모리 단편화 방지 + 자동 GC (OOM 방지) |
 
 ## Workflows
 
