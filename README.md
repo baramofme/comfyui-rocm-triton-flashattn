@@ -93,8 +93,6 @@ docker compose up -d
 | `COMFYUI_ENABLE_MIOpen` | `1` | Enable MIOpen for better upscaling performance |
 | `MIOPEN_FIND_MODE` | `FAST` | MIOpen kernel find mode (FAST for initial speed) |
 | `AITER_TRITON_ONLY` | `1` | Use only Triton kernels for AITER (avoids CDNA-only HIP kernels) |
-| `HIP_FORCE_DEV_KERNARG` | `1` | Force HIP kernel arguments to device memory (RDNA3 3-5% perf gain) |
-| `HSA_FORCE_FINE_GRAIN_PCIE` | `1` | Fine-grain PCIe memory (reduces copy overhead) |
 | `PYTORCH_HIP_ALLOC_CONF` | `expandable_segments:True,garbage_collection_threshold:0.8` | ROCm 메모리 단편화 방지 + 자동 GC (OOM 방지) |
 | `MALLOC_MMAP_THRESHOLD_` | `65536` | Prevent glibc memory fragmentation OOM |
 | `MALLOC_TRIM_THRESHOLD_` | `65536` | Prevent glibc memory fragmentation OOM |
