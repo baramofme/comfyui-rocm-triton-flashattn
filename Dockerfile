@@ -8,6 +8,8 @@ ENV MIOPEN_FIND_ENFORCE=1 \
     TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1 \
     COMFYUI_ENABLE_MIOpen=1 \
     FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE \
+    FLASH_ATTENTION_TRITON_AMD_AUTOTUNE=TRUE \
+    AITER_TRITON_ONLY=1 \
     PYTORCH_ALLOC_CONF=expandable_segments:True \
     MALLOC_MMAP_THRESHOLD_=65536 \
     MALLOC_TRIM_THRESHOLD_=65536
@@ -20,6 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxtst6 \
     libxi6 \
     nano \
+    build-essential \
+    ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
@@ -52,7 +56,7 @@ ENV PIP_CONSTRAINT=/opt/venv/pip-constraints.txt
 
 # ponytail: ComfyUI-Manager ROCm protection - prevent CUDA torch overwrite
 RUN mkdir -p /workspace/user/__manager && \
-    printf 'torch\ntriton\nflash-attn\ntorchaudio\ntorchvision\n' > /workspace/user/__manager/pip_blacklist.list && \
+    printf 'torch\ntriton\nflash-attn\ntorchaudio\ntorchvision\naiter\n' > /workspace/user/__manager/pip_blacklist.list && \
     printf '[default]\nmodel_download_by_agent = True\nsecurity_level = weak\nnetwork_mode = personal_cloud\nallow_git_url_install = True\nallow_pip_install = True\n' > /workspace/user/__manager/config.ini
 
 # ponytail: Triton-only flash-attn install. FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
@@ -63,14 +67,22 @@ RUN FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE \
     CUDA_HOME=/opt/rocm \
     pip install --no-cache-dir flash-attn==2.8.4 --no-build-isolation
 
+# ponytail: aiter v0.1.13 from source — ROCm-optimized attention kernels matching rocm-ninodes
+RUN git clone --depth=1 --branch v0.1.13 --recursive \
+    https://github.com/ROCm/aiter.git /opt/aiter \
+    && cd /opt/aiter \
+    && GPU_ARCHS=gfx1100 MAX_JOBS=8 AITER_USE_SYSTEM_TRITON=1 \
+       pip install --no-build-isolation . \
+    && rm -rf /opt/aiter
+
 # 커스텀 노드 중 의존성 필요한 것들 설치
 RUN pip install --no-cache-dir timm ultralytics opencv-contrib-python pymatting --no-deps
 RUN pip install --no-cache-dir segment-anything piexif webcolors insightface llama_cpp-python
 
 RUN mkdir -p /workspace/user/__manager && \
-    printf 'torch\ntriton\nflash-attn\ntorchaudio\ntorchvision\ntimm\n' > /workspace/user/__manager/pip_blacklist.list
+    printf 'torch\ntriton\nflash-attn\ntorchaudio\ntorchvision\ntimm\naiter\n' > /workspace/user/__manager/pip_blacklist.list
 
-RUN echo '#!/bin/bash\nset -e\nmkdir -p /workspace/user/__manager\nprintf "[default]\\nmodel_download_by_agent = True\\nsecurity_level = weak\\nnetwork_mode = personal_cloud\\nallow_git_url_install = True\\nallow_pip_install = True\\n" > /workspace/user/__manager/config.ini\nprintf "torch\\ntriton\\nflash-attn\\n" > /workspace/user/__manager/pip_blacklist.list\nexec python main.py \\\n    --listen 0.0.0.0 \\\n    --port ${PORT:-8188} \\\n    --disable-api-nodes \\\n    --cache-none \\\n    --disable-mmap \\\n    --enable-manager \\\n    --enable-manager-legacy-ui \\\n    ${CLI_ARGS}' > /opt/entrypoint.sh
+RUN echo '#!/bin/bash\nset -e\nmkdir -p /workspace/user/__manager\nprintf "[default]\\nmodel_download_by_agent = True\\nsecurity_level = weak\\nnetwork_mode = personal_cloud\\nallow_git_url_install = True\\nallow_pip_install = True\\n" > /workspace/user/__manager/config.ini\nprintf "torch\\ntriton\\nflash-attn\\naiter\\n" > /workspace/user/__manager/pip_blacklist.list\nexec python main.py \\\n    --listen 0.0.0.0 \\\n    --port ${PORT:-8188} \\\n    --disable-api-nodes \\\n    --cache-none \\\n    --disable-mmap \\\n    --enable-manager \\\n    --enable-manager-legacy-ui \\\n    ${CLI_ARGS}' > /opt/entrypoint.sh
 
 RUN chmod +x /opt/entrypoint.sh
 

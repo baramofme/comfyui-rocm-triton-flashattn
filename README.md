@@ -10,7 +10,7 @@ This project provides a specialized Docker container optimized for running Comfy
 ## Features
 
 *   **Optimized Performance**: Powered by ROCm 7.14 + PyTorch 2.12 with AOTriton 0.13+.
-*   **Advanced Kernels**: Full support for **Triton** and **Flash Attention** optimized for AMD GPUs.
+*   **Advanced Kernels**: Full support for **Triton**, **Flash Attention** and **AITER** (AMD Inference Toolkit) optimized for AMD GPUs.
 *   **Specialized Workflow Support**:
     *   **Krea2 (Int8)**: High-speed inference with low memory footprint using specialized INT8 kernels.
     *   **LTX 2.3 Director**: Optimized for efficient video generation workloads on RDNA3 architecture.
@@ -35,6 +35,10 @@ This Docker image uses the base `rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorc
 
 flash-attn is installed with `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`, which builds **only the Triton backend** — the HIP C++ extension (`flash_attn_2_cuda`) targets CDNA-only architectures (gfx90a/gfx942) and is incompatible with RDNA3 (gfx1100). The Triton backend is the official AMD-supported path for consumer GPUs.
 
+**AITER** (AMD Inference Toolkit) v0.1.13 is built from source (`github.com/ROCm/aiter` tag `v0.1.13`) with `GPU_ARCHS=gfx1100` and `AITER_USE_SYSTEM_TRITON=1` to use the system Triton. AITER is the same version used in the `rocm-ninodes` reference image for 20%+ attention kernel performance.
+
+`FLASH_ATTENTION_TRITON_AMD_AUTOTUNE=TRUE` is set globally to automatically tune flash-attn Triton kernels for your specific GPU, providing an additional 5-10% performance gain on first use.
+
 ### ROCm Package Protection
 
 This image includes multi-layer protection to prevent CUDA package overwrites during node installs or updates:
@@ -42,7 +46,7 @@ This image includes multi-layer protection to prevent CUDA package overwrites du
 | Layer | File | Effect |
 |-------|------|--------|
 | 1 | `pip-constraints.txt` | Pins ROCm torch version at pip level |
-| 2 | `pip_blacklist.list` | Blocks Manager from installing torch/triton/flash-attn |
+| 2 | `pip_blacklist.list` | Blocks Manager from installing torch/triton/flash-attn/aiter |
 | 3 | `config.ini` | Manager settings: `security_level=weak`, `model_download_by_agent=True` |
 
 Even with Manager's full permissions enabled (`security_level=weak`), ROCm-optimized packages are protected from accidental CUDA overwrites.
@@ -85,6 +89,8 @@ docker compose up -d
 | `COMFYUI_WORKFLOWS` | `./workflows` | Host path for workflow presets |
 | `COMFYUI_ENABLE_MIOpen` | `1` | Enable MIOpen for better upscaling performance |
 | `MIOPEN_FIND_MODE` | `FAST` | MIOpen kernel find mode (FAST for initial speed) |
+| `FLASH_ATTENTION_TRITON_AMD_AUTOTUNE` | `TRUE` | Enable flash-attn Triton autotuning for 5-10% perf uplift |
+| `AITER_TRITON_ONLY` | `1` | Use only Triton kernels for AITER (avoids CDNA-only HIP kernels) |
 | `MALLOC_MMAP_THRESHOLD_` | `65536` | Prevent glibc memory fragmentation OOM |
 | `MALLOC_TRIM_THRESHOLD_` | `65536` | Prevent glibc memory fragmentation OOM |
 | `PYTORCH_ALLOC_CONF` | `expandable_segments:True` | Optimizes PyTorch memory allocation for ROCm |
