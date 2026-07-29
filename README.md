@@ -9,8 +9,8 @@ This project provides a specialized Docker container optimized for running Comfy
 
 ## Features
 
-*   **Optimized Performance**: Powered by ROCm 7.14 + PyTorch 2.12 with AOTriton 0.13+.
-*   **Advanced Kernels**: Full support for **Triton**, **Flash Attention** and **AITER** (AMD Inference Toolkit) optimized for AMD GPUs.
+*   **Optimized Performance**: Powered by ROCm 7.14 + PyTorch 2.12 with AOTriton 0.11.2.
+*   **Advanced Kernels**: Full support for **Triton**, **Flash Attention**, **AITER** (AMD Inference Toolkit), and **fa-rdna3** (pure Triton FA-2 for RDNA3).
 *   **Specialized Workflow Support**:
     *   **Krea2 (Int8)**: High-speed inference with low memory footprint using specialized INT8 kernels.
     *   **LTX 2.3 Director**: Optimized for efficient video generation workloads on RDNA3 architecture.
@@ -22,6 +22,7 @@ This project provides a specialized Docker container optimized for running Comfy
     *   `ComfyUI-KJNodes`: A vast collection of utility nodes.
     *   `ComfyUI-VideoHelperSuite`: Robust video import/export functionality.
     *   `rgthree-comfy`: Enhanced workspace organization and workflow control.
+    *   `RDNA3-Flash-Attention`: Pure Triton FA-2 for gfx1100 — up to 1.79× vs AOTriton.
 
 ## Requirements
 
@@ -31,13 +32,15 @@ This project provides a specialized Docker container optimized for running Comfy
 
 ## Build Notes
 
-This Docker image uses the base `rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorch_release_2.12.0` image which already includes PyTorch and ROCm-optimized Triton.
+This Docker image uses the base `rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorch_release_2.12.0` image which already includes PyTorch and ROCm-optimized Triton (3.7.1) with AOTriton 0.11.2 bundled.
 
 flash-attn is installed with `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`, which builds **only the Triton backend** — the HIP C++ extension (`flash_attn_2_cuda`) targets CDNA-only architectures (gfx90a/gfx942) and is incompatible with RDNA3 (gfx1100). The Triton backend is the official AMD-supported path for consumer GPUs.
 
 **AITER** (AMD Inference Toolkit) v0.1.13 is built from source (`github.com/ROCm/aiter` tag `v0.1.13`) with `GPU_ARCHS=gfx1100` and `AITER_USE_SYSTEM_TRITON=1` to use the system Triton. AITER is the same version used in the `rocm-ninodes` reference image for 20%+ attention kernel performance.
 
-`FLASH_ATTENTION_TRITON_AMD_AUTOTUNE=TRUE` is set globally to automatically tune flash-attn Triton kernels for your specific GPU, providing an additional 5-10% performance gain on first use.
+⚠️ `FLASH_ATTENTION_TRITON_AMD_AUTOTUNE` is intentionally **NOT** set globally — it causes import errors on RDNA3 with PyTorch 2.12.
+
+**fa-rdna3** v0.2.0 (`chelokot/flash-attention-rdna3`) is installed as a ComfyUI custom node (`RDNA3-Flash-Attention`) and as an editable pip package. It provides a pure Triton FlashAttention-2 implementation specifically tuned for gfx1100 (7900 XTX), with up to **1.79× forward / 1.63× backward** speedup over AOTriton. Apply via the `RDNA3 Flash Attention` model_patches node in your workflow, or call `enable_rdna3_flash_attention()` for process-wide SDPA override.
 
 ### ROCm Package Protection
 
@@ -82,18 +85,19 @@ docker compose up -d
 | `COMFYUI_IMAGE` | `comfyui-rocm` | Docker image name |
 | `COMFYUI_VERSION` | `latest` | Docker image version tag |
 | `COMFYUI_PORT` | `8188` | The port exposed for Web UI access |
-| `CLI_ARGS` | `--use-flash-attention` | Extra command line arguments passed to ComfyUI |
+| `CLI_ARGS` | *(empty)* | Extra command line arguments (e.g. `--highvram`, `--preview-method auto`) |
 | `COMFYUI_MODELS` | `./models` | Host path for model storage |
 | `COMFYUI_CUSTOM_NODES` | `./custom_nodes` | Host path for additional custom nodes |
 | `COMFYUI_OUTPUT` | `./output` | Host path for generated output |
 | `COMFYUI_WORKFLOWS` | `./workflows` | Host path for workflow presets |
 | `COMFYUI_ENABLE_MIOpen` | `1` | Enable MIOpen for better upscaling performance |
 | `MIOPEN_FIND_MODE` | `FAST` | MIOpen kernel find mode (FAST for initial speed) |
-| `FLASH_ATTENTION_TRITON_AMD_AUTOTUNE` | `TRUE` | Enable flash-attn Triton autotuning for 5-10% perf uplift |
 | `AITER_TRITON_ONLY` | `1` | Use only Triton kernels for AITER (avoids CDNA-only HIP kernels) |
+| `HIP_FORCE_DEV_KERNARG` | `1` | Force HIP kernel arguments to device memory (RDNA3 3-5% perf gain) |
+| `HSA_FORCE_FINE_GRAIN_PCIE` | `1` | Fine-grain PCIe memory (reduces copy overhead) |
+| `PYTORCH_HIP_ALLOC_CONF` | `expandable_segments:True,garbage_collection_threshold:0.8` | ROCm 메모리 단편화 방지 + 자동 GC (OOM 방지) |
 | `MALLOC_MMAP_THRESHOLD_` | `65536` | Prevent glibc memory fragmentation OOM |
 | `MALLOC_TRIM_THRESHOLD_` | `65536` | Prevent glibc memory fragmentation OOM |
-| `PYTORCH_HIP_ALLOC_CONF` | `expandable_segments:True,garbage_collection_threshold:0.8` | ROCm 메모리 단편화 방지 + 자동 GC (OOM 방지) |
 
 ## Workflows
 
@@ -110,7 +114,7 @@ High-performance video generation workflows are supported out-of-the-box through
 ## Troubleshooting
 
 *   **GPU not detected**: Check `docker logs <container_id>`. Ensure ROCm drivers are properly mapped.
-*   **Out of Memory (OOM)**: Add `--lowvram` or `--novram` via the `COMFYUI_ARGS` environment variable in your `.env`.
+*   **Out of Memory (OOM)**: Add `--lowvram` or `--novram` via the `CLI_ARGS` environment variable in your `.env`. The image sets `PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.8` to minimize fragmentation, but large models (22B+) may still need `--lowvram` on 24GB cards.
 *   **Permission Issues**: Verify write permissions on your host volume directories (`models`, `output`).
 *   **Log Inspection**: Use `docker logs -f <container_name>` for real-time debugging.
 
