@@ -1,7 +1,7 @@
 # ComfyUI ROCm - Triton & Flash Attention Optimized
 ### AMD GPU 최적화 ComfyUI Docker 이미지
 
-**Latest Version**: `comfyui-rocm:rocm7.14-py2.12-fa2.8`
+**Latest Version**: `comfyui-rocm:rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-rdna30.2.0-comfy0.28.2`
 
 This project provides a specialized Docker container optimized for running ComfyUI on AMD hardware using **ROCm 7.14** and **PyTorch 2.12**. It features high-performance optimizations including Triton and Flash Attention specifically tuned for ROCm architectures, enabling advanced workflows like INT8 precision (Krea2) and video generation (LTX 2.3 Director).
 
