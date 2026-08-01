@@ -1,13 +1,27 @@
 services:
   comfyui-rocm:
-    image: ${COMFYUI_IMAGE:-comfyui-rocm}:${COMFYUI_VERSION:-latest}
+    #image: comfyui-rocm:rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-rdna30.2.0-comfy0.28.2
+    image: comfyui-rocm:rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.28.2
+    #image: yanwk/comfyui-boot:rocm7
     container_name: comfyui_gpu0
     restart: unless-stopped
 
     devices:
       - /dev/kfd:/dev/kfd
-      - /dev/dri/card2:/dev/dri/card2
-      - /dev/dri/renderD130:/dev/dri/renderD130
+      # 전체를 대신 개별 장치 로드
+      - /dev/dri:/dev/dri
+
+      # 첫번째 7900xtx (llama-server용)
+      #- /dev/dri/card0:/dev/dri/card0
+      #- /dev/dri/renderD128:/dev/dri/renderD128
+
+      # 두번째 내장 gpus
+      # - /dev/dri/card1:/dev/dri/card1
+      # - /dev/dri/renderD129:/dev/dri/renderD129
+
+      # 세번째 장치 7900xtx gpu
+      #- /dev/dri/card2:/dev/dri/card2
+      #- /dev/dri/renderD130:/dev/dri/renderD130
 
     group_add:
       - video
@@ -16,18 +30,58 @@ services:
     security_opt:
       - seccomp:unconfined
 
+    # 시스템 램 점유 제한 - 무제한 램 점유로 프리징 방지
     # deploy:
     #   resources:
     #     limits:
     #       memory: 60G
     # memswap_limit: 60G
 
+    # AMD fd 누수 문제 방지
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+
     ports:
       - "8189:8188"
 
     environment:
-      - COMFYUI_ARGS=--listen 0.0.0.0 --preview-method auto --disable-pinned-memory --use-flash-attention
-      - HIP_VISIBLE_DEVICES=0
+      # --- ComfyUI 추가 인자 ---
+      # entrypoint 기본값: --listen 0.0.0.0 --port ${PORT} --disable-api-nodes
+      #   --cache-none --disable-mmap --enable-manager --enable-manager-legacy-ui
+      - CLI_ARGS=--disable-pinned-memory --enable-manager --disable-dynamic-vram --disable-async-offload --use-flash-attention --lowvram
+
+      # --- CPU thread (호스트 코어 수에 맞게 조정) ---
+      - OMP_NUM_THREADS=8
+      - MKL_NUM_THREADS=8
+      - OPENBLAS_NUM_THREADS=8
+      - VECLIB_MAXIMUM_THREADS=8
+      - NUMEXPR_NUM_THREADS=8
+
+      # --- GPU 설정 ---
+      # SDMA 가속. 듀얼 GPU면 0으로 변경
+      - HSA_ENABLE_SDMA=0
+      # GPU 선택 (기본: 모든 GPU visible).
+      # 듀얼 GPU (두 컨테이너):
+      #   instance 1: HIP_VISIBLE_DEVICES=0
+      #   instance 2: HIP_VISIBLE_DEVICES=1
+      # 단일 GPU: 주석 처리 또는 0
+      - HIP_VISIBLE_DEVICES=0,1,2
+
+      # --- NCCL (단일 GPU에선 불필요, 듀얼 GPU 안전장치) ---
+      - NCCL_P2P_DISABLE=1
+      - NCCL_IB_DISABLE=1
+
+      - HIP_FORCE_DEV_KERNARG=1
+      - HSA_FORCE_FINE_GRAIN_PCIE=1
+      - PYTORCH_TUNABLEOP_ENABLED=0
+      - PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.8
+
+    # 오류 때문에 컨테이너가 중단되지 않도록 버티게 하기
+    # entrypoint: ["/bin/bash", "-c", "echo 'Container held for debugging'; sleep infinity"]
+    # 💡 [추가] 컨테이너가 켜질 때 제약 파일을 자동으로 만들고 ComfyUI를 실행하도록 entrypoint 오버라이드
+    # entrypoint: ["/bin/bash", "-c", "echo -e 'torch==2.12.0+rocm7.14.0\ntriton==3.7.1' > /opt/venv/pip-constraints.txt && python main.py --listen 0.0.0.0 --highvram --preview-method auto --use-flash-attention"]
 
     volumes:
       - /mnt/nvmedata/comfy/hf-hub:/root/.cache/huggingface/hub
@@ -36,12 +90,12 @@ services:
       - /mnt/nvmedata/comfy/input:/workspace/input
       - /mnt/nvmedata/comfy/output:/workspace/output
       - /mnt/nvmedata/comfy/user/default/workflows:/workspace/user/default/workflows
-      # - /mnt/nvmedata/comfy/custom_nodes:/workspace/custom_nodes
+      #- /mnt/nvmedata/comfy/user:/workspace/user
+      - /mnt/nvmedata/comfy/custom_nodes:/workspace/custom_nodes
 
     networks:
       - dokploy-network
 
-# only for dokploy
-#networks:
-#  dokploy-network:
-#    external: true
+networks:
+  dokploy-network:
+    external: true

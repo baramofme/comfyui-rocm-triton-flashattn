@@ -13,10 +13,12 @@ ENV MIOPEN_FIND_ENFORCE=1 \
     TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1 \
     COMFYUI_ENABLE_MIOpen=1 \
     FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE \
-    AITER_TRITON_ONLY=1 \
     PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.8 \
     MALLOC_MMAP_THRESHOLD_=65536 \
     MALLOC_TRIM_THRESHOLD_=65536
+
+# ponytail: AITER_TRITON_ONLY=1 (triton-only AITER kernels) breaks gfx1100 — black images from 2nd generation onward
+ENV AITER_TRITON_ONLY=0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -45,8 +47,6 @@ RUN sleep 2 && git clone --depth 1 https://github.com/kijai/ComfyUI-KJNodes /wor
 RUN sleep 2 && git clone --depth 1 https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite /workspace/custom_nodes/ComfyUI-VideoHelperSuite || true
 RUN sleep 2 && git clone --depth 1 https://github.com/rgthree/rgthree-comfy /workspace/custom_nodes/rgthree-comfy || true
 RUN sleep 2 && git clone --depth 1 https://github.com/chflame163/ComfyUI_LayerStyle /workspace/custom_nodes/ComfyUI_LayerStyle || true
-# ponytail: pure Triton FA-2 for RDNA3 — gfx1100 optimized forward/backward/decode
-RUN sleep 2 && git clone --depth 1 https://github.com/chelokot/flash-attention-rdna3.git /workspace/custom_nodes/RDNA3-Flash-Attention || true
 
 # ponytail: pin ROCm torch to prevent CUDA overwrites during runtime updates
 RUN echo "torch==2.12.0+rocm7.14" > /opt/venv/pip-constraints.txt
@@ -63,9 +63,6 @@ RUN pip install --no-cache-dir -r /workspace/requirements.txt && \
 RUN FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE \
     CUDA_HOME=/opt/rocm \
     pip install --no-cache-dir flash-attn==2.8.3.post1 --no-build-isolation
-
-# ponytail: fa-rdna3 — pure Triton FA-2 for RDNA3 (editable install so ComfyUI node resolves imports)
-RUN pip install --no-cache-dir -e /workspace/custom_nodes/RDNA3-Flash-Attention
 
 # ponytail: aiter v0.1.13 from source — ROCm-optimized attention kernels matching rocm-ninodes
 RUN git clone --depth=1 --branch v0.1.13 --recursive \
@@ -90,7 +87,7 @@ RUN pip install --no-cache-dir segment-anything piexif webcolors insightface lla
 RUN mkdir -p /workspace/user/__manager && \
     printf 'torch\ntriton\nflash-attn\ntorchaudio\ntorchvision\ntimm\naiter\n' > /workspace/user/__manager/pip_blacklist.list
 
-RUN echo '#!/bin/bash\nset -e\nmkdir -p /workspace/user/__manager\nprintf "[default]\\nmodel_download_by_agent = True\\nsecurity_level = weak\\nnetwork_mode = personal_cloud\\nallow_git_url_install = True\\nallow_pip_install = True\\n" > /workspace/user/__manager/config.ini\nprintf "torch\\ntriton\\nflash-attn\\naiter\\n" > /workspace/user/__manager/pip_blacklist.list\nexec python main.py \\\n    --listen 0.0.0.0 \\\n    --port ${PORT:-8188} \\\n    --disable-api-nodes \\\n    --cache-none \\\n    --disable-mmap \\\n    --enable-manager \\\n    --enable-manager-legacy-ui \\\n    ${CLI_ARGS}' > /opt/entrypoint.sh
+RUN echo '#!/bin/bash\nset -e\nmkdir -p /workspace/user/__manager\nprintf "[default]\\nmodel_download_by_agent = True\\nsecurity_level = weak\\nnetwork_mode = personal_cloud\\nallow_git_url_install = True\\nallow_pip_install = True\\n" > /workspace/user/__manager/config.ini\nprintf "torch\\ntriton\\nflash-attn\\naiter\\n" > /workspace/user/__manager/pip_blacklist.list\nexec python main.py \\\n    --listen 0.0.0.0 \\\n    --port ${PORT:-8188} \\\n    --disable-api-nodes \\\n    --disable-mmap \\\n    --enable-manager \\\n    --enable-manager-legacy-ui \\\n    ${CLI_ARGS}' > /opt/entrypoint.sh
 
 RUN chmod +x /opt/entrypoint.sh
 

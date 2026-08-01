@@ -99,7 +99,24 @@ MLA (Multi-head Latent Attention) for DeepSeek models is another AITER-exclusive
 
 ---
 
-## fa-rdna3 v0.2.0 (chelokot/flash-attention-rdna3)
+## fa-rdna3 — 제거됨 (2026-08-01)
+
+> **결정**: `chelokot/flash-attention-rdna3` v0.2.0 (fa-rdna3, 커스텀 노드 `RDNA3-Flash-Attention`) **이미지에서 제거**.
+
+### 제거 사유 (실측 벤치 기준)
+
+| 경로 | 활성화 | 시간 |
+|------|--------|------|
+| PyTorch SDPA (AOTriton) | 자동 | 22.04s |
+| **fa-rdna3** | 워크플로 노드 | 20.67s |
+| **FA2 Triton** | `--use-flash-attention` | **20.54s** |
+
+- fa-rdna3(20.67s)와 FA2(20.54s)는 **성능 동급** (차이 0.13s = 노이즈)
+- FA2가 ComfyUI **표준 경로** (`--use-flash-attention` 플래그, 우선순위 3번째)로 더 안전하고 유지보수 용이
+- fa-rdna3의 유일한 장점이던 "워크플로 단위 선택 적용"은 이 워크플로(krea2 int8)에 필요 없음
+- 커스텀 노드 유지 비용(빌드 시간, 잠재 충돌, `optimized_attention` 오버라이드 경쟁) 대비 이점 없음
+
+### 이전 역할 (제거 전)
 
 | Property | Value |
 |----------|-------|
@@ -109,44 +126,44 @@ MLA (Multi-head Latent Attention) for DeepSeek models is another AITER-exclusive
 | GPU target | gfx1100 only (7900 XT/XTX/GRE) |
 | Dependencies | Triton only (no HIP C++ compilation) |
 
-**Why add fa-rdna3 alongside AITER:**
+fa-rdna3는 gfx1100 전용 **순수 Triton** FlashAttention-2 구현이었음 (HIP C++ 확장·Composable Kernel 불필요). `ApplyRDNA3FlashAttention` 워크플로 노드 또는 `enable_rdna3_flash_attention()` SDPA 전역 패치로 활성화.
 
-fa-rdna3 provides a **pure Triton** FlashAttention-2 implementation purpose-built for RDNA3, with no dependency on HIP C++ extensions or Composable Kernel. This avoids the JIT compilation issues that AITER encounters on newer ROCm releases.
-
-Key advantages over AITER:
-
-| Feature | AITER | fa-rdna3 |
-|---------|-------|----------|
-| HIP C++ build | Required (JIT, ~21s) | **None** — Triton only |
-| Forward vs AOTriton | Unknown | **Up to 1.79×** |
-| Backward vs AOTriton | Unknown | **Up to 1.63×** |
-| Split-K decode | Not available | **Up to 13.4×** over serial |
-| torch.compile | ❌ (opaque op) | ✅ (torch.library.custom_op) |
-| ComfyUI node | Not available | `ApplyRDNA3FlashAttention` |
-| SDPA monkey-patch | Not available | `enable_rdna3_flash_attention()` |
-| gfx1100 validation | General ROCm | **Explicit gfx1100 verification** |
-
-fa-rdna3 is installed as a **ComfyUI custom node** (`RDNA3-Flash-Attention`) and as a pip editable package. Users opt in by adding the `ApplyRDNA3FlashAttention` node to their workflow (model_patches), or enable globally via `enable_rdna3_flash_attention()`.
+> ⚠️ 제거 전 경고: fa-rdna3 노드와 `--use-flash-attention`은 둘 다 `optimized_attention` 경로를 오버라이드 → **동시 사용 금지** (노드가 있으면 RDNA3 경로 우선). 이제 노드가 없으므로 충돌 가능성 소멸.
 
 ---
 
-## Attention Backend Priority
+## Attention Backend Priority (실측 벤치 반영, 2026-08-01)
+
+### ComfyUI 내장 우선순위 (AMD ROCm)
+
+ComfyUI는 CLI 플래그 + 설치 패키지로 attention 구현을 선택 (우선순위 높은 순, [attention.py](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/ldm/modules/attention.py#L776-L796)):
+
+| Priority | Implementation | 활성화 조건 |
+|----------|---------------|------------|
+| 1 | Sage attention | sageattention 설치 + `--use-sage-attention` |
+| 2 | xformers | ROCm xformers 설치 (자동, 플래그 불필요) |
+| 3 | **Flash attention (FA2)** | flash-attn 설치 + **`--use-flash-attention`** |
+| 4 | PyTorch SDPA | `--use-pytorch-cross-attention` 또는 자동감지 (ROCm + torch ≥2.7 + AOTriton) |
+| 5 | Split attention | `--use-split-cross-attention` |
+| 6 | Sub-quadratic | 기본 폴백 |
+
+> ⚠️ **xformers는 설치만 되어도 자동 우선** (플래그보다 우선) — FA2/SDPA를 쓰려면 설치하지 말 것.
+> 이 이미지에는 xformers 미설치 → FA2 경로 오버라이드 리스크 없음.
+
+### 벤치 결과 (krea2 int8, RX 7900 XTX, 연속 생성 run2+)
+
+| 경로 | 활성화 | 시간 | 비고 |
+|------|--------|------|------|
+| PyTorch SDPA | 자동 | 22.04s | 기준 |
+| **FA2 Triton** | **`--use-flash-attention`** | **20.54s** | **-6.8% 최적** |
+
+- 이 이미지의 flash-attn은 **Triton-only 빌드** (`FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` 빌드 시 고정) → 런타임 env 토글 무차별
+- FA2 첫 생성은 커널 초기화 워밍업 (~30s), 이후 연속 생성 안정
+
+### 구성 요약
 
 ```
-┌──────────────────────────────────────────────────────┐
-│  1. fa-rdna3 RDNA3 Flash Attention (model_patches)  │ ← Pure Triton, gfx1100 tuned
-│     Condition: user adds ApplyRDNA3FlashAttention    │    up to 1.79× vs AOTriton
-│     node to workflow                                  │
-├──────────────────────────────────────────────────────┤
-│  2. AITER flash_attn (monkey-patch SDPA)            │ ← RDNA3 optimized, 64 KB shared mem
-│     Condition: arch ∈ {rdna3, rdna3_5}               │
-├──────────────────────────────────────────────────────┤
-│  3. flash-attn Triton backend (env var)              │ ← ROCm 6.4+ / PyTorch SDPA built-in
-│     Condition: flash_attn package installed          │
-├──────────────────────────────────────────────────────┤
-│  4. AOTriton (PyTorch built-in)                     │ ← Always available, CDNA-optimized
-│     Version: 0.11.2                                   │
-└──────────────────────────────────────────────────────┘
+CLI_ARGS += --disable-dynamic-vram --use-flash-attention   (--cache-none 제거)
 ```
 
 ---
@@ -167,10 +184,41 @@ expandable_segments:True,garbage_collection_threshold:0.8
 
 ---
 
+## VRAM Management — Krea2 vs LTX (운영 확정 조합)
+
+RX 7900 XTX 24GB 단일 GPU에서 두 워크플로우의 VRAM 전략이 **근본적으로 다르다**.
+
+| | Krea2 (이미지) | LTX 2.3 (영상) |
+|---|---|---|
+| 모델 크기 | int8 13GB | int8 21GB (24GB의 87%) |
+| 여유 VRAM | ~11GB | ~2-3GB |
+| 해법 | `--lowvram` (CLIP만 CPU) | **청킹** (lowvram 무의미) |
+| 검증 | 연속 4회 20.7s, OOM 없음 | V3 + 시간축 chunk, OOM 없음 |
+
+**결정 사항:**
+
+1. **`--lowvram` 채택 (Krea2)**: CLIP/텍스트 인코더만 CPU로 오프로드, UNet은 GPU 상주. reserve-vram은 UNet을 매 스텝 CPU 왕복시켜 3분+ 역효과 → 기각. GC threshold 0.5 실험도 OOM 미해결 → 0.8 유지.
+2. **TensorParallelV3 (LTX)**: `comfyui_tensor_parallel_v3` 노드, `ffn_chunks=8`. 모델 내 112개 FFN(`ff`+`audio_ff`)을 래핑해 FFN 활성화 peak를 1/8로. `--lowvram`·offload와 안전 동작. KJNodes의 `LTXVChunkFeedForward`(chunks=2, 비디오 FFN만)보다 래핑 범위·chunks 수 모두 우위.
+3. **MuseDirector 시간축 chunk (LTX)**: `chunk_duration_seconds=10`으로 시퀀스를 시간 축 분할 → 어텐션 시퀀스 반토막. V3(메모리 축)와 직교 관계로 함께 사용.
+4. **`--disable-dynamic-vram` 유지 (AMD 필수)**: main.py 57행에서 `comfy_aimdo.control.init()`이 `is_nvidia()` 조건 없이 실행 — disable 없으면 AMD에서도 aimdo prefetch가 켜져 검은 이미지 재발.
+
+**기각된 기법 (LTX 영상):**
+- `PatchModelAddDownscale` (Deep Shrink): latent 해상도를 축소 → LTX는 RoPE freqs를 블록 루프 전 1회 계산하므로 다운스케일된 토큰과 위치 불일치 → 사용 불가.
+- `ComfyUI-TiledDiffusion`: 4D 이미지 latent 전제, 공간(H,W)만 타일링. 영상은 5D latent + 시간 축이 시퀀스에 포함 → 적용 불가.
+- `--highvram`: LTX 21GB + gemma 8.8GB = 30GB > 24GB → 로드 시점 OOM.
+
+**운영 compose 환경변수** (docker-compose.yml 반영):
+- `HIP_FORCE_DEV_KERNARG=1`, `HSA_FORCE_FINE_GRAIN_PCIE=1` — 과거 OOM 원인으로 의심돼 제거했으나 **실제 운영 컨테이너에서 켠 상태로 안정 동작 확인**되어 유지. (95df45a 커밋의 제거 결정은 롤백)
+- `HSA_ENABLE_SDMA=0` — 듀얼 GPU 환경에서 SDMA 비활성
+- `NCCL_P2P_DISABLE=1`, `NCCL_IB_DISABLE=1` — 듀얼 GPU 안전장치
+- `HIP_VISIBLE_DEVICES=0,1,2` — 7900 XTX ×2 + 내장 GPU 가시화
+
+---
+
 ## Image Tag
 
 ```
-rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-rdna30.2.0-comfy0.28.2
+rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.28.2
 ```
 
 All versioned components are listed in the tag for reproducibility:
@@ -183,5 +231,6 @@ All versioned components are listed in the tag for reproducibility:
 | Triton | 3.7.1 |
 | flash-attn | 2.8.3.post1 |
 | AITER | v0.1.13 |
-| fa-rdna3 | 0.2.0 |
 | ComfyUI | v0.28.2 |
+
+> fa-rdna3 0.2.0은 v0.2.0 태그(`...-rdna30.2.0-...`)에서 사용되다가 2026-08-01 벤치 결과로 제거됨 (FA2와 동급 성능).
