@@ -1,7 +1,7 @@
 # ComfyUI ROCm - Triton & Flash Attention Optimized
 ### AMD GPU 최적화 ComfyUI Docker 이미지
 
-**Latest Version**: `comfyui-rocm:rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.28.2`
+**Latest Version**: `comfyui-rocm:rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.31.0`
 
 This project provides a specialized Docker container optimized for running ComfyUI on AMD hardware using **ROCm 7.14** and **PyTorch 2.12**. It features high-performance optimizations including Triton and Flash Attention specifically tuned for ROCm architectures, enabling advanced workflows like INT8 precision (Krea2) and video generation (LTX 2.3 Director).
 
@@ -36,7 +36,7 @@ This Docker image uses the base `rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorc
 flash-attn is installed with `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`, which builds **only the Triton backend** — the HIP C++ extension (`flash_attn_2_cuda`) targets CDNA-only architectures (gfx90a/gfx942) and is incompatible with RDNA3 (gfx1100). The Triton backend is the official AMD-supported path for consumer GPUs.
 
 > ⚠️ **활성화 방법**: FA2 경로는 CLI 인자 `--use-flash-attention`이 있어야 활성화됩니다 (env만으로는 안 됨).
-> 벤치 결과: SDPA 22.04s → FA2 20.54s (**-6.8%**), RDNA3 FA 20.67s와 동급.
+> 벤치 결과 (v0.28.2): SDPA 22.04s → FA2 20.54s (**-6.8%**), RDNA3 FA 20.67s와 동급. v0.31.0에서는 Krea2 INT8이 **8.08s**로 측정 (상세: `docs/BENCHMARK_RESULTS.md`).
 > 런타임 `FLASH_ATTENTION_TRITON_AMD_ENABLE` env 토글은 빌드 시 고정되어 있어 **무차별**입니다.
 
 **AITER** (AMD Inference Toolkit) v0.1.13 is built from source (`github.com/ROCm/aiter` tag `v0.1.13`) with `GPU_ARCHS=gfx1100` and `AITER_USE_SYSTEM_TRITON=1` to use the system Triton. AITER is the same version used in the `rocm-ninodes` reference image for 20%+ attention kernel performance.
@@ -108,7 +108,7 @@ docker compose up -d
 
 ## 최적 실행 설정 (벤치 결과 기반)
 
-RX 7900 XTX (gfx1100) 기준 벤치: 연속 생성 27.55s → **20.54s (-25%)**. 자세한 실험표는 [`docs/BENCHMARK_RESULTS.md`](docs/BENCHMARK_RESULTS.md) 참고.
+RX 7900 XTX (gfx1100) 기준 벤치: 연속 생성 27.55s → **8.08s (-71%)** (v0.31.0 실측, v0.28.2 대비 ~2.5배). 자세한 실험표는 [`docs/BENCHMARK_RESULTS.md`](docs/BENCHMARK_RESULTS.md) 참고.
 ```
 --disable-pinned-memory --enable-manager --disable-dynamic-vram --disable-async-offload --use-flash-attention --lowvram
 ```

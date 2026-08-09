@@ -1,12 +1,25 @@
 # ComfyUI ROCm — Performance Benchmark & Optimal Config
 
-> 벤치마크일: 2026-08-01 · RX 7900 XTX (gfx1100) · torch 2.12.0+rocm7.14 · ComfyUI v0.28.2
+> 벤치마크일: 2026-08-09 · RX 7900 XTX (gfx1100) · torch 2.12.0+rocm7.14 · **ComfyUI v0.31.0** (comfy-kitchen 0.2.28)
 > 워크플로: `image_krea2_turbo_t2i_int8` (krea2_turbo_int8_convrot, 1024×1024, 4-step euler, FP8 CLIP)
 > 측정: 연속 생성 wall time (run2+ 안정값)
 
 ---
 
-## 벤치마크 결과
+## v0.31.0 업그레이드 검증 (2026-08-09)
+
+| 항목 | v0.28.2 | v0.31.0 | 변화 |
+|------|---------|---------|------|
+| Krea2 INT8 연속 생성 (1024×1024, 4-step euler) | 20.54s | **8.08s** | **-60.7% (~2.5배)** |
+| LTX 2.3 img2vid (608×384, 33프레임, 8-step, Q4_K_M GGUF) | - | 375.09s | v0.31.0 최초 검증 |
+
+- **Krea2**: 6회 연속 8.078~8.091s (표준편차 <0.01s), 출력 md5 전부 상이(재현성 정상), 픽셀 검증 통과. 워크플로·설정 동일하므로 **버전 업그레이드 자체가 2.5배 개선의 원인**
+- **LTX 2.3**: `ltx-2.3-22b-distilled-UD-Q4_K_M.gguf` + TensorParallelV3(ffn_chunks=8) + pruna VAE + VAEDecodeTiled, GPU0 22.8GB 사용. h264 608x384@30fps 33프레임 산출, ffprobe·픽셀 검증 통과 (블랙/노이즈 아님, 웜톤, 프레임 간 모션 존재)
+- 이하 v0.28.2 실험표는 업그레이드 전 최적 구성 탐색 이력
+
+---
+
+## 벤치마크 결과 (v0.28.2, 2026-08-01)
 
 | # | 설정 | 연속 생성 (run2+) | 판정 |
 |---|------|------------------|------|
@@ -98,7 +111,7 @@ exec python main.py \
 ```yaml
 services:
   comfyui-rocm:
-    image: comfyui-rocm:rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.28.2
+    image: comfyui-rocm:rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.31.0
     container_name: comfyui_gpu0
     restart: unless-stopped
     devices:

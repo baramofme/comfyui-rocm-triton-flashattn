@@ -218,7 +218,7 @@ RX 7900 XTX 24GB 단일 GPU에서 두 워크플로우의 VRAM 전략이 **근본
 ## Image Tag
 
 ```
-rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.28.2
+rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.31.0
 ```
 
 All versioned components are listed in the tag for reproducibility:
@@ -231,6 +231,6 @@ All versioned components are listed in the tag for reproducibility:
 | Triton | 3.7.1 |
 | flash-attn | 2.8.3.post1 |
 | AITER | v0.1.13 |
-| ComfyUI | v0.28.2 |
+| ComfyUI | v0.31.0 (2026-08-09 업그레이드, v0.28.2 → v0.31.0) |
 
 > fa-rdna3 0.2.0은 v0.2.0 태그(`...-rdna30.2.0-...`)에서 사용되다가 2026-08-01 벤치 결과로 제거됨 (FA2와 동급 성능).

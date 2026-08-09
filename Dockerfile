@@ -34,7 +34,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /workspace
 
-ARG COMFYUI_VERSION=v0.28.2
+ARG COMFYUI_VERSION=v0.31.0
 RUN git clone --depth 1 --branch ${COMFYUI_VERSION} https://github.com/comfyanonymous/ComfyUI.git /workspace
 
 RUN mkdir -p /cache/tunableop /cache/triton /cache/miopen
@@ -47,6 +47,7 @@ RUN sleep 2 && git clone --depth 1 https://github.com/kijai/ComfyUI-KJNodes /wor
 RUN sleep 2 && git clone --depth 1 https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite /workspace/custom_nodes/ComfyUI-VideoHelperSuite || true
 RUN sleep 2 && git clone --depth 1 https://github.com/rgthree/rgthree-comfy /workspace/custom_nodes/rgthree-comfy || true
 RUN sleep 2 && git clone --depth 1 https://github.com/chflame163/ComfyUI_LayerStyle /workspace/custom_nodes/ComfyUI_LayerStyle || true
+RUN sleep 2 && git clone --depth 1 https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler /workspace/custom_nodes/ComfyUI-SeedVR2_VideoUpscaler || true
 
 # ponytail: pin ROCm torch to prevent CUDA overwrites during runtime updates
 RUN echo "torch==2.12.0+rocm7.14" > /opt/venv/pip-constraints.txt
@@ -55,7 +56,7 @@ RUN echo "torch==2.12.0+rocm7.14" > /opt/venv/pip-constraints.txt
 RUN pip install --no-cache-dir -r /workspace/requirements.txt && \
     find /workspace/custom_nodes -name "requirements.txt" -exec pip install --no-cache-dir -r {} \; 2>/dev/null || true && \
     pip install --no-cache-dir gguf comfyui-manager==4.2.2 && \
-    pip install --no-cache-dir --upgrade comfy-kitchen==0.2.22
+    pip install --no-cache-dir --upgrade comfy-kitchen==0.2.28
 
 # ponytail: Triton-only flash-attn install before constraint activation.
 # FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE skips HIP C++ extension
@@ -83,6 +84,9 @@ RUN mkdir -p /workspace/user/__manager && \
 # 커스텀 노드 중 의존성 필요한 것들 설치
 RUN pip install --no-cache-dir timm ultralytics opencv-contrib-python pymatting --no-deps
 RUN pip install --no-cache-dir segment-anything piexif webcolors insightface llama_cpp-python
+
+# ponytail: SeedVR2 deps — --no-deps to bypass pip resolver (ResolutionImpossible on ROCm torch); numpy/einops/etc already in image
+RUN pip install --no-cache-dir omegaconf diffusers peft accelerate rotary_embedding_torch --no-deps
 
 RUN mkdir -p /workspace/user/__manager && \
     printf 'torch\ntriton\nflash-attn\ntorchaudio\ntorchvision\ntimm\naiter\n' > /workspace/user/__manager/pip_blacklist.list
