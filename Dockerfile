@@ -20,6 +20,11 @@ ENV MIOPEN_FIND_ENFORCE=1 \
 # ponytail: AITER_TRITON_ONLY=1 (triton-only AITER kernels) breaks gfx1100 — black images from 2nd generation onward
 ENV AITER_TRITON_ONLY=0
 
+# ponytail: ROCr 1.21 AsyncEventsLoop busy-spin fix (ROCm/TheRock#7051) —
+# preload clean ROCr 1.18 + 10-symbol shim over the bundled _rocm_sdk_core runtime
+COPY docker/rocr-fix/ /opt/rocr-fix/
+ENV LD_PRELOAD=/opt/rocr-fix/libhsa_shim.so:/opt/rocr-fix/libhsa-runtime64.so.1.18.70203
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libx11-6 \

@@ -47,6 +47,9 @@ services:
       - "8189:8188"
 
     environment:
+      # --- ROCr 1.21 AsyncEventsLoop busy-spin fix: preload clean ROCr 1.18 (ROCm/TheRock#7051) ---
+      - LD_PRELOAD=/opt/rocr-fix/libhsa_shim.so:/opt/rocr-fix/libhsa-runtime64.so.1.18.70203
+
       # --- ComfyUI 추가 인자 ---
       # entrypoint 기본값: --listen 0.0.0.0 --port ${PORT} --disable-api-nodes
       #   --cache-none --disable-mmap --enable-manager --enable-manager-legacy-ui
@@ -84,6 +87,7 @@ services:
     # entrypoint: ["/bin/bash", "-c", "echo -e 'torch==2.12.0+rocm7.14.0\ntriton==3.7.1' > /opt/venv/pip-constraints.txt && python main.py --listen 0.0.0.0 --highvram --preview-method auto --use-flash-attention"]
 
     volumes:
+      - /mnt/nvmedata/comfy/rocr-fix:/opt/rocr-fix:ro
       - /mnt/nvmedata/comfy/hf-hub:/root/.cache/huggingface/hub
       - /mnt/nvmedata/comfy/torch-hub:/root/.cache/torch/hub
       - /mnt/nvmedata/comfy/models:/workspace/models
