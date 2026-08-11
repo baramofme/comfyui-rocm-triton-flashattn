@@ -27,6 +27,7 @@ ENV LD_PRELOAD=/opt/rocr-fix/libhsa_shim.so:/opt/rocr-fix/libhsa-runtime64.so.1.
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
+    ffmpeg \
     libx11-6 \
     libxext6 \
     libxrender1 \
@@ -61,7 +62,7 @@ RUN echo "torch==2.12.0+rocm7.14" > /opt/venv/pip-constraints.txt
 RUN pip install --no-cache-dir -r /workspace/requirements.txt && \
     find /workspace/custom_nodes -name "requirements.txt" -exec pip install --no-cache-dir -r {} \; 2>/dev/null || true && \
     pip install --no-cache-dir gguf comfyui-manager==4.2.2 && \
-    pip install --no-cache-dir --upgrade comfy-kitchen==0.2.28
+    pip install --no-cache-dir --upgrade comfy-kitchen==0.2.30
 
 # ponytail: Triton-only flash-attn install before constraint activation.
 # FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE skips HIP C++ extension
@@ -77,6 +78,10 @@ RUN git clone --depth=1 --branch v0.1.13 --recursive \
     && GPU_ARCHS=gfx1100 MAX_JOBS=8 AITER_USE_SYSTEM_TRITON=1 \
        pip install --no-build-isolation . \
     && rm -rf /opt/aiter
+
+# ponytail: prebuild aiter_core JIT module into the image (runtime JIT build
+# races on lock_module_aiter_core — wedges container boot when a build dies)
+RUN GPU_ARCHS=gfx1100 python -c "import aiter"
 
 # now activate constraints for any future runtime installs
 ENV PIP_CONSTRAINT=/opt/venv/pip-constraints.txt

@@ -53,7 +53,7 @@ services:
       # --- ComfyUI 추가 인자 ---
       # entrypoint 기본값: --listen 0.0.0.0 --port ${PORT} --disable-api-nodes
       #   --cache-none --disable-mmap --enable-manager --enable-manager-legacy-ui
-      - CLI_ARGS=--disable-pinned-memory --enable-manager --disable-dynamic-vram --disable-async-offload --use-flash-attention --lowvram
+      - CLI_ARGS=--disable-pinned-memory --enable-manager --disable-dynamic-vram --disable-async-offload --use-flash-attention --lowvram --force-non-blocking
 
       # --- CPU thread (호스트 코어 수에 맞게 조정) ---
       - OMP_NUM_THREADS=8
