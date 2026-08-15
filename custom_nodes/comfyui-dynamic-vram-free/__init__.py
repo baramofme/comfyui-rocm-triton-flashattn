@@ -40,18 +40,6 @@ def _release_vram():
     except Exception:
         pass
 
-    try:
-        from comfy import memory_management as cmm
-        if getattr(cmm, "aimdo_enabled", False):
-            import comfy_aimdo.model_vbar
-            dev = mm.get_torch_device()
-            comfy_aimdo.model_vbar.vbars_reset_watermark_limits()
-            freed = comfy_aimdo.model_vbar.vbars_analyze(dev)
-            if freed:
-                freed_mb += freed / (1024 * 1024)
-    except Exception as e:
-        print(f"[DynamicVRAM-Free] aimdo vbar cleanup skipped: {e}")
-
     return n_models, freed_mb
 
 

@@ -315,13 +315,57 @@ docker restart llm-main
 
 ---
 
-## 9. 참고 — 이번에 사용한 진단 경로
+## 9. ⚠️ 동적 VRAM 스테이징 캐시 — 프로세스 재시작이 유일한 해제 수단
+
+### 현상 (VRAM 99% + 노드로 안 풀림)
+
+krea2 실행 후 VRAM 99%(17.8GB) 상태. `DynamicVRAMFree` 노드를 실행해도 **52MB만 해제**되고
+여전히 99%. 측정 결과:
+
+```
+current_loaded_models: 0        ← ComfyUI "모델 없음"
+aimdo get_total_vram_usage(): 0 ← aimdo "VBAR 없음"
+torch.cuda.memory_stats: 0GB    ← torch "비어있음"
+KFD 프로세스 할당: 13.2GB       ← 실제로는 이 프로세스가 잡고 있음
+드라이버 사용량: 17.8GB         ← 최종 사실
+```
+
+### 정체
+
+- 실행 후 남는 17.8GB는 **dynamic VRAM이 다음 실행을 위해 캐시해 둔 파일 스트리밍/
+  스테이징 버퍼** — `read_tensor_file_slice_into`/`read_file_to_device`가 HIP 레벨에 직접 예약
+- **torch 캐시도, aimdo VBAR도, current_loaded_models도 아님** → Python 레벨에서 접근 불가
+- 프로세스가 살아있는 한 유지됨 (의도된 캐시)
+
+### 이점 (같은 워크플로우 연속 실행)
+
+- krea2: 65.7s → 57.9s (캐시 재사용으로 빨라짐) — **같은 워크플로우 반복엔 오히려 좋음**
+
+### 해제 시도 기록 (모두 실패/부작용)
+
+| 방법 | 결과 |
+|---|---|
+| `partially_unload(1e32)` (노드 기본) | 52MB만 — `current_loaded_models`가 비어서 접근 불가 |
+| `control.deinit()` + `init_devices()` 재초기화 | **12GB 해제 성공**하지만 **프로세스 세그폴트 크래시** (`model_vbar.py:132 __del__`) → 롤백 |
+| `gc` + `torch.cuda.empty_cache()` + `soft_empty_cache` | 0 — torch 캐시가 아님 |
+| `mm.unload_all_models()` | 0 — dynamic 모델은 evict 제외 |
+
+### 결론
+
+**동적 VRAM 스테이징 캐시는 프로세스 수명에 묶여 있어, Python 레벨의 안전한 해제
+방법이 없다.** 워크플로우 전환 시 `docker restart comfyui_gpu0`(~30초)가 유일한 해제 수단.
+
+---
+
+## 10. 참고 — 이번에 사용한 진단 경로
 
 - 로그: `docker logs comfyui_gpu0` (핵심: `Requested to load`, `loaded partially/completely`, `Prompt executed`)
 - VRAM: `rocm-smi --showmeminfo vram` (KFD: `rocm-smi --showpids`)
 - 시스템: `http://localhost:8189/system_stats` (torch 예약 vs 드라이버 사용 구분 가능)
 - 실패 진단: `comfyui_get_history diagnose` (정확한 실패 노드 + traceback)
-- 행 판별: py-spy `dump --pid 1` (멈춤 vs 진행 중 구분 — GPU 98% + `voluntary_ctxt_switches` 증가면 진행)
-- 핵심 소스: `/workspace/main.py:249`, `/workspace/comfy/model_management.py:797`, `/workspace/comfy/model_patcher.py:1791+`
+- 행 판별: py-spy `dump --pid 1` (멈춤 vs 진행 중 구분 — `read_file_to_device`가 보이면 파일 스트리밍 중)
+- 힙 스캔: `gc.get_objects()`로 `dynamic_vbars`/`_comfy_tensor_mmap_refs` 존재 확인 (스테이징 버퍼가 Python 힙에 없음을 증명)
+- aimdo API: `comfy_aimdo.control.get_total_vram_usage()` (C 레벨 예약 조회), `control.deinit()` (⚠️ 크래시 유발 — 조사용)
+- 핵심 소스: `/workspace/main.py:249`, `/workspace/comfy/model_management.py:797`, `/workspace/comfy/model_patcher.py:1791+`, `/workspace/comfy/memory_management.py:18`
 - 플래그 문서: https://docs.comfy.org/development/comfyui-server/startup-flags
 - MIOpen 참고: PyTorch PR #179795, ROCm/MIOpen #2981, rocm-libraries #3553/#4071, ROCm #6008
