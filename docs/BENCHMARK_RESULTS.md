@@ -6,6 +6,26 @@
 
 ---
 
+## SageAttention 도입 검증 (2026-08-16, ComfyUI v0.32.0)
+
+> SageAttention **v2.2.0** (thu-ml/SageAttention **PR #381**, Scorp1o117 rocm-triton-support 6aa2622f pinned) — HIP 자동 감지, 순수 Triton, `num_stages=1`
+> 비교: `--use-sage-attention` vs `--use-flash-attention` (FA2 Triton-only). 동일 CLI_ARGS + 워크플로우 전환마다 컨테이너 재기동 (VRAM 상주 영향 배제). 상세: [`SAGEATTENTION_BENCHMARK.md`](SAGEATTENTION_BENCHMARK.md)
+
+| 워크플로우 | FA2 | SAGE | 차이 |
+|---|---|---|---|
+| Krea2 INT8 (1024×1024, 4-step) | 8.31s | 8.02s | -3.5% (노이즈 수준) |
+| LTX 2.5 (448×832, 5s, 24fps, 8+3-step) | 87.0s | **81.3s** | **-6.5%** |
+| MiniMax H3 (9:16 0.4MP, 5s, 8-step, Q4_K_M GGUF) | 303.6s | **192.2s** | **-36.7%** |
+
+- **시퀀스가 길수록 sage의 INT8 QK 양자화 이점이 커짐**: 이미지(짧은 시퀀스)는 동급, LTX -6.5%, MiniMax H3 -37%
+- **결론: FA2 → SAGE로 전환**. 영상 생성(장시퀀스)에서 실질 개선, 이미지에서도 동급 이상
+- 이미지 반영: Dockerfile에 sageattention v2.2.0 (PR #381) 설치 + pip_blacklist 추가
+
+### 이전 FA2/SDPA 벤치 (v0.28.2, 2026-08-01)
+- 이하 v0.28.2 실험표는 sage 도입 전 FA2 탐색 이력. sage가 FA2를 대체함 (2026-08-16)
+
+---
+
 ## v0.31.0 업그레이드 검증 (2026-08-09)
 
 | 항목 | v0.28.2 | v0.31.0 | 변화 |
@@ -85,6 +105,8 @@
 
 ## 최적 설정 (Dokploy UI 반영용)
 
+> ⚠️ **2026-08-16 갱신**: attention 백엔드가 FA2 → **SAGE**로 교체됨 (영상 -6.5%~-37%). `--lowvram`은 sage 벤치에서 **제거** (no-lowvram NORMAL_VRAM 상태로 측정). Krea2 이미지 반복 생성 OOM은 `--enable-dynamic-vram`으로 관리.
+
 ### 1. `--cache-none` 제거 — entrypoint 오버라이드
 
 이미지의 `/opt/entrypoint.sh`가 `--cache-none`을 하드코딩하므로, 오버라이드 파일을 마운트:
@@ -95,7 +117,7 @@
 set -e
 mkdir -p /workspace/user/__manager
 printf "[default]\nmodel_download_by_agent = True\nsecurity_level = weak\nnetwork_mode = personal_cloud\nallow_git_url_install = True\nallow_pip_install = True\n" > /workspace/user/__manager/config.ini
-printf "torch\ntriton\nflash-attn\naiter\n" > /workspace/user/__manager/pip_blacklist.list
+printf "torch\ntriton\nflash-attn\naiter\nsageattention\n" > /workspace/user/__manager/pip_blacklist.list
 exec python main.py \
     --listen 0.0.0.0 \
     --port ${PORT:-8188} \
@@ -111,7 +133,7 @@ exec python main.py \
 ```yaml
 services:
   comfyui-rocm:
-    image: comfyui-rocm:rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.31.0
+    image: comfyui-rocm:rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.32.0
     container_name: comfyui_gpu0
     restart: unless-stopped
     devices:
@@ -131,7 +153,7 @@ services:
         soft: 1048576
         hard: 1048576
     environment:
-      - CLI_ARGS=--disable-pinned-memory --enable-manager --disable-dynamic-vram --disable-async-offload --use-flash-attention --lowvram
+      - CLI_ARGS=--disable-pinned-memory --enable-manager --use-sage-attention --force-non-blocking --enable-dynamic-vram
       - OMP_NUM_THREADS=8
       - MKL_NUM_THREADS=8
       - OPENBLAS_NUM_THREADS=8
@@ -168,13 +190,15 @@ networks:
 | 항목 | 기존 | 최적 |
 |------|------|------|
 | `--cache-none` | 강제 (entrypoint) | **제거** (entrypoint 오버라이드) |
-| `--use-flash-attention` | 없음 (SDPA) | **추가 (FA2 Triton, -6.8%)** |
-| `--lowvram` | 없음 | **추가** (Krea2 반복 OOM 해결, 속도 무손실) |
+| `--use-sage-attention` | 없음 (FA2) | **추가 (SAGE, 영상 -6.5%~-37%)** |
+| `--use-flash-attention` | 있었음 (FA2) | **제거** (sage가 대체, 2026-08-16) |
+| `--lowvram` | 있었음 | **제거** (no-lowvram NORMAL_VRAM, dynamic-vram으로 관리) |
+| `--force-non-blocking` | 없음 | **추가** (현 운영 compose 반영) |
 | `PYTORCH_TUNABLEOP_ENABLED` | 0 | 0 (1이면 역효과) |
-| 어텐션 env 3종 | FALSE/0/0 | 제거해도 무방 (`--use-flash-attention`가 핵심) |
+| 어텐션 env 3종 | FALSE/0/0 | 제거해도 무방 (`--use-sage-attention`가 핵심) |
 | HIPBLASLT | 없음 | 제거해도 무방 |
 | ulimits nofile | 1024 (기본) | **1048576 (필수)** |
-| `--disable-dynamic-vram` | 있음 | **유지 (버그 방지)** |
+| `--disable-dynamic-vram` | 있음 | **제거** — 운영에서 `--enable-dynamic-vram` 사용 중 (검은 이미지 문제는 v0.32.0에서 해소 확인) |
 
 ### 주의
 - `/workspace/user`는 named volume `c8a836a0...` — bind mount로 바꾸면 워크플로/설정이 사라짐. 반드시 외부 볼륨 유지

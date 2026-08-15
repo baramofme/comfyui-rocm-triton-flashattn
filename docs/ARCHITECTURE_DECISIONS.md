@@ -132,7 +132,42 @@ fa-rdna3는 gfx1100 전용 **순수 Triton** FlashAttention-2 구현이었음 (H
 
 ---
 
-## Attention Backend Priority (실측 벤치 반영, 2026-08-01)
+## SageAttention — FA2 대체 (2026-08-16)
+
+> **결정**: FA2(`--use-flash-attention`) → **SageAttention v2.2.0** (`--use-sage-attention`) 전환. thu-ml/SageAttention **PR #381** (Scorp1o117 rocm-triton-support, pinned `6aa2622f`).
+
+### 왜 PR #381인가 (V1 patientx 패치 기각)
+
+| | V1 (guinmoon 휠 = patientx RDNA3 패치) | **V2 (PR #381)** |
+|---|---|---|
+| 버전 | sageattention-1 1.0.6 | **2.2.0 (main)** |
+| HIP 지원 | 수동 패치 (waves_per_eu, BLOCK 32/16) | **setup.py HIP 자동 감지 → CUDA ext 스킵** |
+| 검증 환경 | Windows ROCm 7.12 nightly | **ROCm 7.14 + torch 2.12.0 + triton 3.7.1 (본 이미지와 동일)** |
+| RDNA 크래시 | 미보고 | **`num_stages=1`로 use-after-free(#365) 회피, RDNA3.5에서 2.8x 회복** |
+| head_dim | 64/96/128 전용 | **64–128 패딩 지원** |
+
+### 실측 벤치 (2026-08-16, RX 7900 XTX, 동일 CLI_ARGS + 워크플로우 전환마다 재기동)
+
+| 워크플로우 | FA2 | SAGE | 차이 |
+|---|---|---|---|
+| Krea2 INT8 (이미지) | 8.31s | 8.02s | -3.5% (노이즈) |
+| LTX 2.5 (5s 영상) | 87.0s | 81.3s | **-6.5%** |
+| MiniMax H3 (5s 영상) | 303.6s | 192.2s | **-36.7%** |
+
+- 시퀀스 길이에 비례해 이점 증가 (INT8 QK 양자화 효과)
+- `--lowvram`은 sage 벤치에서 **제거** (no-lowvram + `--enable-dynamic-vram`이 Krea2 OOM 재현 없이 안정)
+
+### 구현 노트
+
+- Dockerfile: `pip install --no-build-isolation .` (소스 빌드, HIP 감지 시 순수 파이썬 설치는 아님 — setup.py가 ext 빌드만 스킵)
+- pip_blacklist에 sageattention 추가 (Manager가 CUDA 버전 덮어쓰기 방지)
+- ⚠️ **PR #381은 open 상태** — fork repo에 pinned commit 의존. 업스트림 merge 전까지 fork 유지 필요
+- mask 있는 어텐션은 ComfyUI가 자동 pytorch fallback (안전)
+- 상세 벤치: [`SAGEATTENTION_BENCHMARK.md`](SAGEATTENTION_BENCHMARK.md)
+
+---
+
+## Attention Backend Priority (실측 벤치 반영, 2026-08-01 → 2026-08-16 갱신)
 
 ### ComfyUI 내장 우선순위 (AMD ROCm)
 
@@ -154,16 +189,18 @@ ComfyUI는 CLI 플래그 + 설치 패키지로 attention 구현을 선택 (우�
 
 | 경로 | 활성화 | 시간 | 비고 |
 |------|--------|------|------|
-| PyTorch SDPA | 자동 | 22.04s | 기준 |
-| **FA2 Triton** | **`--use-flash-attention`** | **20.54s** | **-6.8% 최적** |
+| PyTorch SDPA | 자동 | 22.04s | 기준 (v0.28.2) |
+| **FA2 Triton** | `--use-flash-attention` | 20.54s | v0.28.2에서 -6.8% 최적 |
+| **SageAttention v2.2.0** | **`--use-sage-attention`** | **8.02s** | **v0.32.0 최종 — FA2 대체 (2026-08-16)** |
 
+- SageAttention은 Krea2(이미지) -3.5%, LTX 2.5 -6.5%, MiniMax H3 **-36.7%** (FA2 대비)
 - 이 이미지의 flash-attn은 **Triton-only 빌드** (`FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` 빌드 시 고정) → 런타임 env 토글 무차별
 - FA2 첫 생성은 커널 초기화 워밍업 (~30s), 이후 연속 생성 안정
 
 ### 구성 요약
 
 ```
-CLI_ARGS += --disable-dynamic-vram --use-flash-attention   (--cache-none 제거)
+CLI_ARGS += --use-sage-attention --enable-dynamic-vram   (--cache-none 제거, --lowvram 제거)
 ```
 
 ---
@@ -218,7 +255,7 @@ RX 7900 XTX 24GB 단일 GPU에서 두 워크플로우의 VRAM 전략이 **근본
 ## Image Tag
 
 ```
-rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.31.0
+rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.32.0
 ```
 
 All versioned components are listed in the tag for reproducibility:
@@ -230,7 +267,9 @@ All versioned components are listed in the tag for reproducibility:
 | PyTorch | 2.12.0 |
 | Triton | 3.7.1 |
 | flash-attn | 2.8.3.post1 |
+| SageAttention | 2.2.0 (PR #381, 6aa2622f — 태그에 미포함, Dockerfile 참조) |
 | AITER | v0.1.13 |
-| ComfyUI | v0.31.0 (2026-08-09 업그레이드, v0.28.2 → v0.31.0) |
+| ComfyUI | v0.32.0 (2026-08-09 v0.31.0 업그레이드 → v0.32.0) |
 
 > fa-rdna3 0.2.0은 v0.2.0 태그(`...-rdna30.2.0-...`)에서 사용되다가 2026-08-01 벤치 결과로 제거됨 (FA2와 동급 성능).
+> FA2는 2026-08-16 sage 도입 전 표준 경로였으며, 현재는 sage가 대체 (FA2 유지 — sage fallback 불필요 시 제거 후보).

@@ -1,6 +1,6 @@
 IMAGE_NAME ?= comfyui-rocm
 BASE_ROCM = $(shell grep '^FROM' Dockerfile | awk '{print $$2}' | sed 's|rocm/pytorch:rocm||;s|_py.*||' | sed 's|_ubuntu.*||')
-VERSION = rocm$(BASE_ROCM)-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.31.0
+VERSION = rocm$(BASE_ROCM)-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.32.0
 FULL_TAG = $(IMAGE_NAME):$(VERSION)
 LATEST_TAG = $(IMAGE_NAME):latest
 

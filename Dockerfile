@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /workspace
 
-ARG COMFYUI_VERSION=v0.31.0
+ARG COMFYUI_VERSION=v0.32.0
 RUN git clone --depth 1 --branch ${COMFYUI_VERSION} https://github.com/comfyanonymous/ComfyUI.git /workspace
 
 RUN mkdir -p /cache/tunableop /cache/triton /cache/miopen
@@ -62,7 +62,13 @@ RUN echo "torch==2.12.0+rocm7.14" > /opt/venv/pip-constraints.txt
 RUN pip install --no-cache-dir -r /workspace/requirements.txt && \
     find /workspace/custom_nodes -name "requirements.txt" -exec pip install --no-cache-dir -r {} \; 2>/dev/null || true && \
     pip install --no-cache-dir gguf comfyui-manager==4.2.2 && \
-    pip install --no-cache-dir --upgrade comfy-kitchen==0.2.30
+    pip install --no-cache-dir comfy-kitchen==0.2.28
+
+# ponytail: comfy-kitchen 0.2.30 HIP 백엔드(gfx1100)에서 int8_convrot 연산이
+# 단색 영상 출력을 유발 (실측 검증: 0.2.28 정상 / 0.2.30 단색). 0.2.28 고정.
+# v0.32.0 코어 attention.py는 0.2.30에 추가된 int8_attention_is_available()을
+# import 시점에 호출하므로, 0.2.28에는 없는 API를 가드.
+RUN python -c "src=open('/workspace/comfy/ldm/modules/attention.py').read(); old='COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE = comfy_kitchen.int8_attention_is_available()'; new='try:\n    COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE = comfy_kitchen.int8_attention_is_available()\nexcept AttributeError:\n    COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE = False'; assert old in src, 'attention.py pattern not found'; open('/workspace/comfy/ldm/modules/attention.py','w').write(src.replace(old,new)); print('attention.py comfy-kitchen guard patched')"
 
 # ponytail: Triton-only flash-attn install before constraint activation.
 # FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE skips HIP C++ extension
@@ -70,6 +76,21 @@ RUN pip install --no-cache-dir -r /workspace/requirements.txt && \
 RUN FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE \
     CUDA_HOME=/opt/rocm \
     pip install --no-cache-dir flash-attn==2.8.3.post1 --no-build-isolation
+
+# ponytail: SageAttention v2.2.0 + thu-ml PR #381 (ROCm/HIP support) applied on top.
+# Official repo clone (main d1a57a54 == PR base) + `curl .../pull/381.patch | git apply`.
+# PR #381: setup.py HIP auto-detect (skip CUDA ext), sageattn() routes to Triton
+# kernels, num_stages=1 under HIP (avoids AMD Triton pipelining UAF #365; 2.8x
+# faster than num_stages=4 on RDNA3.5). Measured on ROCm 7.14 + torch 2.12.0 +
+# triton 3.7.1 (same as this image): 1.16-1.33x over FA2 Triton at seq 8k-32k.
+RUN pip install --no-cache-dir packaging && \
+    git clone https://github.com/thu-ml/SageAttention.git /tmp/sageattn && \
+    cd /tmp/sageattn && \
+    git checkout d1a57a546c3d395b1ffcbeecc66d81db76f3b4b5 && \
+    curl -sL https://github.com/thu-ml/SageAttention/pull/381.diff | git apply - && \
+    git diff --stat && \
+    pip install --no-build-isolation --no-cache-dir . && \
+    cd / && rm -rf /tmp/sageattn
 
 # ponytail: aiter v0.1.13 from source — ROCm-optimized attention kernels matching rocm-ninodes
 RUN git clone --depth=1 --branch v0.1.13 --recursive \
@@ -88,7 +109,7 @@ ENV PIP_CONSTRAINT=/opt/venv/pip-constraints.txt
 
 # ponytail: ComfyUI-Manager ROCm protection - prevent CUDA torch overwrite
 RUN mkdir -p /workspace/user/__manager && \
-    printf 'torch\ntriton\nflash-attn\ntorchaudio\ntorchvision\naiter\n' > /workspace/user/__manager/pip_blacklist.list && \
+    printf 'torch\ntriton\nflash-attn\ntorchaudio\ntorchvision\naiter\ncomfy-kitchen\nsageattention\n' > /workspace/user/__manager/pip_blacklist.list && \
     printf '[default]\nmodel_download_by_agent = True\nsecurity_level = weak\nnetwork_mode = personal_cloud\nallow_git_url_install = True\nallow_pip_install = True\n' > /workspace/user/__manager/config.ini
 
 # 커스텀 노드 중 의존성 필요한 것들 설치
@@ -99,9 +120,9 @@ RUN pip install --no-cache-dir segment-anything piexif webcolors insightface lla
 RUN pip install --no-cache-dir omegaconf diffusers peft accelerate rotary_embedding_torch --no-deps
 
 RUN mkdir -p /workspace/user/__manager && \
-    printf 'torch\ntriton\nflash-attn\ntorchaudio\ntorchvision\ntimm\naiter\n' > /workspace/user/__manager/pip_blacklist.list
+    printf 'torch\ntriton\nflash-attn\ntorchaudio\ntorchvision\ntimm\naiter\ncomfy-kitchen\nsageattention\n' > /workspace/user/__manager/pip_blacklist.list
 
-RUN echo '#!/bin/bash\nset -e\nmkdir -p /workspace/user/__manager\nprintf "[default]\\nmodel_download_by_agent = True\\nsecurity_level = weak\\nnetwork_mode = personal_cloud\\nallow_git_url_install = True\\nallow_pip_install = True\\n" > /workspace/user/__manager/config.ini\nprintf "torch\\ntriton\\nflash-attn\\naiter\\n" > /workspace/user/__manager/pip_blacklist.list\nexec python main.py \\\n    --listen 0.0.0.0 \\\n    --port ${PORT:-8188} \\\n    --disable-api-nodes \\\n    --disable-mmap \\\n    --enable-manager \\\n    --enable-manager-legacy-ui \\\n    ${CLI_ARGS}' > /opt/entrypoint.sh
+RUN echo '#!/bin/bash\nset -e\nmkdir -p /workspace/user/__manager\nprintf "[default]\\nmodel_download_by_agent = True\\nsecurity_level = weak\\nnetwork_mode = personal_cloud\\nallow_git_url_install = True\\nallow_pip_install = True\\n" > /workspace/user/__manager/config.ini\nprintf "torch\\ntriton\\nflash-attn\\naiter\\ncomfy-kitchen\\nsageattention\\n" > /workspace/user/__manager/pip_blacklist.list\nexec python main.py \\\n    --listen 0.0.0.0 \\\n    --port ${PORT:-8188} \\\n    --disable-api-nodes \\\n    --disable-mmap \\\n    --enable-manager \\\n    --enable-manager-legacy-ui \\\n    ${CLI_ARGS}' > /opt/entrypoint.sh
 
 RUN chmod +x /opt/entrypoint.sh
 

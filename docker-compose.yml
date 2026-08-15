@@ -1,7 +1,7 @@
 services:
   comfyui-rocm:
     #image: comfyui-rocm:rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-rdna30.2.0-comfy0.31.0
-    image: comfyui-rocm:rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.31.0
+    image: comfyui-rocm:rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.32.0
     #image: yanwk/comfyui-boot:rocm7
     container_name: comfyui_gpu0
     restart: unless-stopped
@@ -53,7 +53,7 @@ services:
       # --- ComfyUI 추가 인자 ---
       # entrypoint 기본값: --listen 0.0.0.0 --port ${PORT} --disable-api-nodes
       #   --cache-none --disable-mmap --enable-manager --enable-manager-legacy-ui
-      - CLI_ARGS=--disable-pinned-memory --enable-manager --disable-dynamic-vram --disable-async-offload --use-flash-attention --lowvram --force-non-blocking
+      - CLI_ARGS=--disable-pinned-memory --enable-manager --use-sage-attention --force-non-blocking --enable-dynamic-vram
 
       # --- CPU thread (호스트 코어 수에 맞게 조정) ---
       - OMP_NUM_THREADS=8
@@ -76,8 +76,10 @@ services:
       - NCCL_P2P_DISABLE=1
       - NCCL_IB_DISABLE=1
 
-      - HIP_FORCE_DEV_KERNARG=1
-      - HSA_FORCE_FINE_GRAIN_PCIE=1
+      # git 이력 95df45a: "remove HIP_FORCE_DEV_KERNARG and HSA_FORCE_FINE_GRAIN_PCIE (OOM cause)".
+      # Krea2/LTX에서는 안정 동작했으나 MiniMax H3 듀얼 GPU 배치에서 OOM 기여 가능성 → 제거.
+      #- HIP_FORCE_DEV_KERNARG=1
+      #- HSA_FORCE_FINE_GRAIN_PCIE=1
       - PYTORCH_TUNABLEOP_ENABLED=0
       - PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.8
 
