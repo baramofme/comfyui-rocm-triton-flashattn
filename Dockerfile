@@ -122,7 +122,7 @@ RUN pip install --no-cache-dir omegaconf diffusers peft accelerate rotary_embedd
 RUN mkdir -p /workspace/user/__manager && \
     printf 'torch\ntriton\nflash-attn\ntorchaudio\ntorchvision\ntimm\naiter\ncomfy-kitchen\nsageattention\n' > /workspace/user/__manager/pip_blacklist.list
 
-RUN echo '#!/bin/bash\nset -e\nmkdir -p /workspace/user/__manager\nprintf "[default]\\nmodel_download_by_agent = True\\nsecurity_level = weak\\nnetwork_mode = personal_cloud\\nallow_git_url_install = True\\nallow_pip_install = True\\n" > /workspace/user/__manager/config.ini\nprintf "torch\\ntriton\\nflash-attn\\naiter\\ncomfy-kitchen\\nsageattention\\n" > /workspace/user/__manager/pip_blacklist.list\nexec python main.py \\\n    --listen 0.0.0.0 \\\n    --port ${PORT:-8188} \\\n    --disable-api-nodes \\\n    --disable-mmap \\\n    --enable-manager \\\n    --enable-manager-legacy-ui \\\n    ${CLI_ARGS}' > /opt/entrypoint.sh
+RUN echo '#!/bin/bash\nset -e\nmkdir -p /workspace/user/__manager\nprintf "[default]\\nmodel_download_by_agent = True\\nsecurity_level = weak\\nnetwork_mode = personal_cloud\\nallow_git_url_install = True\\nallow_pip_install = True\\n" > /workspace/user/__manager/config.ini\nprintf "torch\\ntriton\\nflash-attn\\naiter\\ncomfy-kitchen\\nsageattention\\n" > /workspace/user/__manager/pip_blacklist.list\nexec python main.py \\\n    --listen 0.0.0.0 \\\n    --port ${PORT:-8188} \\\n    --disable-api-nodes \\\n    --enable-manager \\\n    --enable-manager-legacy-ui \\\n    ${CLI_ARGS}' > /opt/entrypoint.sh
 
 RUN chmod +x /opt/entrypoint.sh
 

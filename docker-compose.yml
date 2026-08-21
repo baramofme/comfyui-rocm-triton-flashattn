@@ -53,7 +53,7 @@ services:
       # --- ComfyUI 추가 인자 ---
       # entrypoint 기본값: --listen 0.0.0.0 --port ${PORT} --disable-api-nodes
       #   --cache-none --disable-mmap --enable-manager --enable-manager-legacy-ui
-      - CLI_ARGS=--disable-pinned-memory --enable-manager --use-sage-attention --force-non-blocking --enable-dynamic-vram
+      - CLI_ARGS=--cache-ram 10 20 --disable-pinned-memory --enable-manager --use-sage-attention --force-non-blocking --enable-dynamic-vram
 
       # --- CPU thread (호스트 코어 수에 맞게 조정) ---
       - OMP_NUM_THREADS=8
@@ -65,12 +65,8 @@ services:
       # --- GPU 설정 ---
       # SDMA 가속. 듀얼 GPU면 0으로 변경
       - HSA_ENABLE_SDMA=0
-      # GPU 선택 (기본: 모든 GPU visible).
-      # 듀얼 GPU (두 컨테이너):
-      #   instance 1: HIP_VISIBLE_DEVICES=0
-      #   instance 2: HIP_VISIBLE_DEVICES=1
-      # 단일 GPU: 주석 처리 또는 0
-      - HIP_VISIBLE_DEVICES=0,1,2
+      # GPU 선택: 호스트 renderD128/129/130 중 7900XTX 2개만 사용 (내장GPU 제외)
+      - HIP_VISIBLE_DEVICES=0,1
 
       # --- NCCL (단일 GPU에선 불필요, 듀얼 GPU 안전장치) ---
       - NCCL_P2P_DISABLE=1
