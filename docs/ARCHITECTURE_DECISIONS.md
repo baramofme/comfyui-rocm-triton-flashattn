@@ -99,6 +99,31 @@ MLA (Multi-head Latent Attention) for DeepSeek models is another AITER-exclusive
 
 ---
 
+## ComfyKitchen
+
+| Property | Value |
+|----------|-------|
+| Version | **0.2.30** (upgraded from 0.2.28) |
+| Installation | `pip install --no-cache-dir comfy-kitchen==0.2.30` |
+| Blacklist | Included in ComfyUI-Manager pip blacklist to prevent overwrite |
+
+### Version 0.2.28 → 0.2.30 upgrade
+
+**Original pin (0.2.28):** Version 0.2.28 was pinned because 0.2.30 had a verified bug on AMD ROCm gfx1100 GPUs — the `int8_convrot` operation produced solid-color (monochrome) images instead of correct output.
+
+**Upgrade rationale (0.2.30):** User requested upgrade to 0.2.30 despite the known issue. The `int8_convrot` bug should be verified at runtime after rebuild.
+
+**API compatibility patch:** ComfyUI v0.32.0 core `attention.py` calls `comfy_kitchen.int8_attention_is_available()` at import time. This API exists in 0.2.30 but not in 0.2.28. The Dockerfile applies a try/except guard to handle both versions:
+
+```python
+try:
+    COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE = comfy_kitchen.int8_attention_is_available()
+except AttributeError:
+    COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE = False
+```
+
+---
+
 ## fa-rdna3 — 제거됨 (2026-08-01)
 
 > **결정**: `chelokot/flash-attention-rdna3` v0.2.0 (fa-rdna3, 커스텀 노드 `RDNA3-Flash-Attention`) **이미지에서 제거**.
@@ -270,6 +295,7 @@ All versioned components are listed in the tag for reproducibility:
 | SageAttention | 2.2.0 (PR #381, 6aa2622f — 태그에 미포함, Dockerfile 참조) |
 | AITER | v0.1.13 |
 | ComfyUI | v0.32.0 (2026-08-09 v0.31.0 업그레이드 → v0.32.0) |
+| ComfyKitchen | 0.2.30 (0.2.28 → 0.2.30 업그레이드) |
 
 > fa-rdna3 0.2.0은 v0.2.0 태그(`...-rdna30.2.0-...`)에서 사용되다가 2026-08-01 벤치 결과로 제거됨 (FA2와 동급 성능).
 > FA2는 2026-08-16 sage 도입 전 표준 경로였으며, 현재는 sage가 대체 (FA2 유지 — sage fallback 불필요 시 제거 후보).
