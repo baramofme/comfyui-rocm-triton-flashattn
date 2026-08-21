@@ -62,12 +62,13 @@ RUN echo "torch==2.12.0+rocm7.14" > /opt/venv/pip-constraints.txt
 RUN pip install --no-cache-dir -r /workspace/requirements.txt && \
     find /workspace/custom_nodes -name "requirements.txt" -exec pip install --no-cache-dir -r {} \; 2>/dev/null || true && \
     pip install --no-cache-dir gguf comfyui-manager==4.2.2 && \
-    pip install --no-cache-dir comfy-kitchen==0.2.28
+    pip install --no-cache-dir comfy-kitchen==0.2.30
 
-# ponytail: comfy-kitchen 0.2.30 HIP 백엔드(gfx1100)에서 int8_convrot 연산이
-# 단색 영상 출력을 유발 (실측 검증: 0.2.28 정상 / 0.2.30 단색). 0.2.28 고정.
+# ponytail: upgraded from 0.2.28 to 0.2.30 per user request.
+# Note: 0.2.30 HIP 백엔드(gfx1100)에서 int8_convrot 연산이 단색 영상 출력을
+# 유발할 수 있음 — 실측으로 검증 필요.
 # v0.32.0 코어 attention.py는 0.2.30에 추가된 int8_attention_is_available()을
-# import 시점에 호출하므로, 0.2.28에는 없는 API를 가드.
+# import 시점에 호출하므로, 아래 패치로 가드 처리.
 RUN python -c "src=open('/workspace/comfy/ldm/modules/attention.py').read(); old='COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE = comfy_kitchen.int8_attention_is_available()'; new='try:\n    COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE = comfy_kitchen.int8_attention_is_available()\nexcept AttributeError:\n    COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE = False'; assert old in src, 'attention.py pattern not found'; open('/workspace/comfy/ldm/modules/attention.py','w').write(src.replace(old,new)); print('attention.py comfy-kitchen guard patched')"
 
 # ponytail: Triton-only flash-attn install before constraint activation.
