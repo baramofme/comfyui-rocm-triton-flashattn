@@ -75,16 +75,10 @@ def _current_prompt():
         import server
 
         ps = server.PromptServer.instance
-        for item in ps.prompt_queue.currently_running.values():
+        # currently_running is keyed BY the prompt_id itself
+        for pid, item in ps.prompt_queue.currently_running.items():
             if len(item) >= 3 and isinstance(item[2], dict):
-                pid = None
-                for cand in (item[0] if item else None,
-                             item[1].get("id") if len(item) > 1 and isinstance(item[1], dict) else None,
-                             item[2].get("id"), item[2].get("prompt_id"), item[2].get("__id__")):
-                    if isinstance(cand, str) and cand:
-                        pid = cand
-                        break
-                return item[2], pid
+                return item[2], str(pid)
     except Exception:
         pass
     return None, None
