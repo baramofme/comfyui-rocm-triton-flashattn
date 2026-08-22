@@ -250,6 +250,30 @@ app.registerExtension({
         }
       };
 
+      this._refreshModelsLabels = function () {
+        const modelsLink = this.inputs?.find((i) => i.name === "models")?.link;
+        const src = modelsLink ? linkSource(this, modelsLink) : null;
+        const listSrc = src ? resolveListSource(src) : null;
+        if (!listSrc) return;
+        if (listSrc._uiInfo) {
+          this._applyModelInfo?.(listSrc._uiInfo);
+          return;
+        }
+        let labels = inputSummaries(listSrc).map((s) => s.label).filter(Boolean);
+        if (!labels.length) {
+          const single = resolveModelSource(listSrc);
+          if (single) labels = [single];
+        }
+        const useWs = this.widgets?.filter((w) => w.name?.startsWith("use_")) ?? [];
+        useWs.forEach((w, i) => {
+          const lbl = labels[i];
+          if (lbl) {
+            w.label = SHORT(lbl.replace(/^\[[^\]]*\]\s*/, ""), 26);
+            if (w.computeSize) w.computeSize();
+          }
+        });
+      };
+
       if (isUnload) {
         const modeW = this.widgets?.find((w) => w.name === "mode");
         const useWs = this.widgets?.filter((w) => w.name?.startsWith("use_")) ?? [];
@@ -267,29 +291,14 @@ app.registerExtension({
         this.onConfigure = function () {
           const r2 = onConfigure?.apply(this, arguments);
           applyMode();
-          const modelsLink = this.inputs?.find((i) => i.name === "models")?.link;
-          const src = modelsLink ? linkSource(this, modelsLink) : null;
-          const listSrc = src ? resolveListSource(src) : null;
-          if (listSrc?._uiInfo) {
-            this._applyModelInfo?.(listSrc._uiInfo);
-          } else if (listSrc) {
-            let labels = inputSummaries(listSrc).map((s) => s.label).filter(Boolean);
-            if (!labels.length) {
-              const single = resolveModelSource(listSrc);
-              if (single) labels = [single];
-            }
-            const useWs = this.widgets?.filter((w) => w.name?.startsWith("use_")) ?? [];
-            useWs.forEach((w, i) => {
-              const lbl = labels[i];
-              if (lbl) {
-                w.label = SHORT(lbl.replace(/^\[[^\]]*\]\s*/, ""), 26);
-                if (w.computeSize) w.computeSize();
-              }
-            });
-          }
+          this._refreshModelsLabels?.();
           return r2;
         };
         applyMode();
+        this._refreshModelsLabels?.();
+        // some restore paths (subgraph-heavy graphs) never fire the connection
+        // callbacks for restored links — re-run once the graph is fully loaded
+        setTimeout(() => this._refreshModelsLabels?.(), 0);
       }
 
       if (isFetch) {
@@ -349,26 +358,7 @@ app.registerExtension({
           this._updateSocketLabels?.();
           this._updateTitleFromLinks?.();
         } else if (isUnload && this.inputs?.[index]?.name === "models") {
-          const link = connected ? link_info : null;
-          const src = link ? linkSource(this, link.id) : null;
-          const listSrc = src ? resolveListSource(src) : null;
-          if (listSrc?._uiInfo) {
-            this._applyModelInfo?.(listSrc._uiInfo);
-          } else if (listSrc) {
-            let labels = inputSummaries(listSrc).map((s) => s.label).filter(Boolean);
-            if (!labels.length) {
-              const single = resolveModelSource(listSrc);
-              if (single) labels = [single];
-            }
-            const useWs = this.widgets?.filter((w) => w.name?.startsWith("use_")) ?? [];
-            useWs.forEach((w, i) => {
-              const lbl = labels[i];
-              if (lbl) {
-                w.label = SHORT(lbl.replace(/^\[[^\]]*\]\s*/, ""), 26);
-                if (w.computeSize) w.computeSize();
-              }
-            });
-          }
+          this._refreshModelsLabels?.();
         }
         if (this.setDirtyCanvas) this.setDirtyCanvas(true, true);
       }
