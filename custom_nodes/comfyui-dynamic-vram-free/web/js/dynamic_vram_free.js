@@ -40,20 +40,53 @@ function linkSource(node, linkId) {
   return link ? g.getNodeById(link.origin_id) : null;
 }
 
-function findSetter(key, node) {
-  const g = graphOf(node);
-  for (const cand of g?._nodes ?? []) {
-    if (cand === node) continue;
-    const ck = setGetKey(cand);
-    if (!ck || ck.wn !== key.wn || ck.v !== key.v) continue;
-    if (cand.inputs?.some((i) => i.link)) return cand;
+// Set/Get buses are global key-value stores: the setter may live in any graph
+// (root or any nested subgraph container's inner graph).
+function findSetter(key, startNode) {
+  const seen = new Set();
+  let found = null;
+  const scan = (g) => {
+    for (const cand of g?._nodes ?? []) {
+      if (found || seen.has(cand)) continue;
+      seen.add(cand);
+      if (cand === startNode) continue;
+      const ck = setGetKey(cand);
+      if (!ck || ck.wn !== key.wn || ck.v !== key.v) continue;
+      if (cand.inputs?.some((i) => i.link)) { found = cand; return; }
+    }
+  };
+  const walk = (g) => {
+    scan(g);
+    for (const n of g?._nodes ?? []) if (n.subgraph) walk(n.subgraph);
+  };
+  walk(graphOf(startNode));
+  if (!found && graphOf(startNode) !== app.graph) scan(app.graph);
+  return found;
+}
+
+// Map a subgraph container's outer socket slot to the inner node feeding it.
+// ComfyUI wires inner outputs to a virtual node id -20 with target_slot = the
+// container's output slot; fall back to positional by exposed output order.
+function subgraphInnerFor(container, slot = 0) {
+  const g = container?.subgraph;
+  if (!g) return null;
+  const link = Object.values(g?.links ?? {}).find(
+    (l) => l.target_id === -20 && (l.target_slot ?? 0) === (slot ?? 0)
+  );
+  if (link) {
+    const inner = g.getNodeById(link.origin_id);
+    return inner ? { node: inner, slot: link.origin_slot ?? 0 } : null;
   }
-  return null;
+  const exposed = (g._nodes ?? []).filter((n) => (n.outputs ?? []).some((o) => o.links?.length));
+  const inner = exposed[slot] ?? (g._nodes ?? [])[slot];
+  return inner ? { node: inner, slot: 0 } : null;
 }
 
 // Resolve a connected model's display name, walking through:
-// loader widgets -> set/get indirection (by shared name key) -> single model-typed input chains
-function resolveModelSource(node, depth = 0, visited = new Set()) {
+// loader widgets -> set/get indirection (by shared name key, any graph) ->
+// subgraph container descent (slot mapped via the inner -20 links) ->
+// single model-typed input chains
+function resolveModelSource(node, slot = 0, depth = 0, visited = new Set()) {
   if (!node || depth > 5 || visited.has(node)) return null;
   visited.add(node);
   const direct = srcModelName(node);
@@ -64,14 +97,33 @@ function resolveModelSource(node, depth = 0, visited = new Set()) {
     if (setter) {
       const valIn = setter.inputs?.find((i) => i.link);
       if (valIn) {
-        const r = resolveModelSource(linkSource(setter, valIn.link), depth + 1, visited);
+        const lk = graphOf(setter)?.links?.[valIn.link];
+        const r = resolveModelSource(
+          linkSource(setter, valIn.link),
+          lk?.origin_slot ?? 0,
+          depth + 1,
+          visited
+        );
         if (r) return r;
       }
     }
   }
+  if (node.subgraph) {
+    const inner = subgraphInnerFor(node, slot);
+    if (inner) {
+      const r = resolveModelSource(inner.node, inner.slot, depth + 1, visited);
+      if (r) return r;
+    }
+  }
   const vIn = node.inputs?.find((i) => i.link && /MODEL|CLIP|VAE/.test(i.type ?? ""));
   if (vIn) {
-    const r = resolveModelSource(linkSource(node, vIn.link), depth + 1, visited);
+    const lk = graphOf(node)?.links?.[vIn.link];
+    const r = resolveModelSource(
+      linkSource(node, vIn.link),
+      lk?.origin_slot ?? 0,
+      depth + 1,
+      visited
+    );
     if (r) return r;
   }
   return null;
@@ -103,7 +155,7 @@ function inputSummaries(node) {
     const link = g?.links?.[inp.link];
     if (!link) continue;
     const src = g?.getNodeById(link.origin_id);
-    const n = src ? (resolveModelSource(src) ?? src.title) : null;
+    const n = src ? (resolveModelSource(src, link.origin_slot ?? 0) ?? src.title) : null;
     out.push({ name: inp.name, label: n ? `[${link.type ?? ""}] ${n}` : null });
   }
   return out;
@@ -155,7 +207,8 @@ app.registerExtension({
       this._updateSocketLabels = function () {
         for (const inp of this.inputs ?? []) {
           const src = inp.link ? linkSource(this, inp.link) : null;
-          const n = src ? (resolveModelSource(src) ?? src.title) : null;
+          const lk = inp.link ? graphOf(this)?.links?.[inp.link] : null;
+          const n = src ? (resolveModelSource(src, lk?.origin_slot ?? 0) ?? src.title) : null;
           inp.label = n ? SHORT(n) : inp.name;
         }
       };
