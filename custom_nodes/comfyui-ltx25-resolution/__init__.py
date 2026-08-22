@@ -117,13 +117,13 @@ class LTX25Controls:
 
     RETURN_TYPES = (
         "INT", "INT", "INT", "INT", "INT", "FLOAT", "FLOAT", "BOOLEAN", "BOOLEAN",
-        "INT", "INT", "INT", "INT", "INT", "INT", "STRING",
+        "INT", "INT", "INT", "INT", "INT", "INT", "STRING", "FLOAT",
     )
     RETURN_NAMES = (
         "final_width", "final_height", "stage1_width", "stage1_height", "frames",
         "fps", "effective_seconds", "need_first_frame", "need_last_frame",
         "tile_size", "overlap", "temporal_size", "temporal_overlap",
-        "stage1_seed", "stage2_seed", "resolved_summary",
+        "stage1_seed", "stage2_seed", "resolved_summary", "duration",
     )
     FUNCTION = "resolve"
     CATEGORY = "LTX-2.5"
@@ -248,7 +248,7 @@ class LTX25Controls:
                 final_width, final_height, final_width // 2, final_height // 2,
                 frames, fps, (frames - 1) / fps, need_first, need_last,
                 tile_size, overlap, temporal_size, temporal_overlap,
-                stage1_seed, stage2_seed, summary,
+                stage1_seed, stage2_seed, summary, duration_seconds,
             ),
         }
 
