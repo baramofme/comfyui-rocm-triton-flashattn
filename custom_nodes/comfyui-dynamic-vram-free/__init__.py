@@ -217,7 +217,7 @@ class DynamicVRAMModelFetch:
             _, desc = _describe(p)
             info_lines.append(f"{pos}. {desc}")
         info = "\n".join(info_lines) if info_lines else "no models connected"
-        return (out, info)
+        return {"ui": {"text": [info]}, "result": (out, info)}
 
 
 class DynamicVRAMFree:
@@ -250,7 +250,7 @@ class DynamicVRAMFree:
             if not changed:
                 msg = "[DynamicVRAM-Free] reset-on-switch: same workflow -> skipped (models kept for speed)"
                 print(msg)
-                return (msg, "")
+                return {"ui": {"text": [msg, ""]}, "result": (msg, "")}
         fetched = models or []
         if isinstance(fetched, (list, tuple)):
             if fetched and not isinstance(fetched[0], (list, tuple)):
@@ -281,7 +281,7 @@ class DynamicVRAMFree:
             lines.append("[DynamicVRAM-Free] show models info: nothing unloaded")
             report = "\n".join(lines)
             print(report)
-            return (report, info)
+            return {"ui": {"text": [report, info]}, "result": (report, info)}
 
         if mode == "unload_all":
             total_freed = 0.0
@@ -304,7 +304,7 @@ class DynamicVRAMFree:
             )
             report = "\n".join(lines)
             print(report)
-            return (report, info)
+            return {"ui": {"text": [report, info]}, "result": (report, info)}
 
         # selective: unload registry entries matching CHECKED positions of the fetched list
         n = 0
@@ -331,7 +331,7 @@ class DynamicVRAMFree:
         )
         report = "\n".join(lines)
         print(report)
-        return (report, info)
+        return {"ui": {"text": [report, info]}, "result": (report, info)}
 
 
 NODE_CLASS_MAPPINGS = {

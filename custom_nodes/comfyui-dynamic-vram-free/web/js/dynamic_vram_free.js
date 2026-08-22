@@ -110,12 +110,32 @@ function inputSummaries(node) {
 }
 
 function outputsOf(message) {
-  // Server executed message: output = {0: status, 1: info} for STRING returns.
   const out = message?.output ?? {};
-  return {
-    status: typeof out[0] === "string" ? out[0] : (message?.text?.[0] ?? ""),
-    info: typeof out[1] === "string" ? out[1] : "",
-  };
+  if (!out) {
+    return { status: message?.text?.[0] ?? "", info: "" };
+  }
+  if (Array.isArray(out)) {
+    return {
+      status: typeof out[0] === "string" ? out[0] : "",
+      info: typeof out[1] === "string" ? out[1] : "",
+    };
+  }
+  const statusVal = out[0] !== undefined ? out[0] : out["0"];
+  const infoVal = out[1] !== undefined ? out[1] : out["1"];
+  if (typeof statusVal === "string" || typeof infoVal === "string") {
+    return {
+      status: typeof statusVal === "string" ? statusVal : "",
+      info: typeof infoVal === "string" ? infoVal : "",
+    };
+  }
+  // 0.32 delivers string returns as {text:[...]} on text-consumer events.
+  if (Array.isArray(out.text)) {
+    return {
+      status: typeof out.text[0] === "string" ? out.text[0] : "",
+      info: typeof out.text[1] === "string" ? out.text[1] : out.text[0] ?? "",
+    };
+  }
+  return { status: "", info: "" };
 }
 
 app.registerExtension({
@@ -141,12 +161,23 @@ app.registerExtension({
       };
 
       this._updateTitleFromLinks = function () {
+        if (this._uiInfo) return; // executed info is authoritative, never clobber
         if (!this._canSetTitle()) return;
         const names = inputSummaries(this)
           .map((s) => s.label)
           .filter(Boolean);
         if (names.length) {
           this.title = TRUNC(`Fetch: ${names.join(" · ")}`);
+          this._uiAuto = true;
+        }
+      };
+
+      this._applyInfoTitle = function () {
+        if (!this._canSetTitle()) return;
+        const lines = (this._uiInfo || "").split("\n").filter(Boolean);
+        const first = (lines[0] ?? "").replace(/^\d+\.\s*/, "");
+        if (first) {
+          this.title = TRUNC(`Fetch: ${first}${lines.length ? ` · ${lines.length} models` : ""}`);
           this._uiAuto = true;
         }
       };
@@ -209,6 +240,39 @@ app.registerExtension({
       }
 
       if (isFetch) {
+        // 0.3x: OUTPUT nodes emit `executed` only when they return {"ui": ...}
+        // (see __init__.py) — this global hook is a safety net for consumer text.
+        if (!this._uiStatsHooked) {
+          this._uiStatsHooked = true;
+          const onAnyExecuted = (e) => {
+            const d = e?.detail || {};
+            const text = d.output?.text;
+            if (!Array.isArray(text) || !text.length) return;
+            const g = graphOf(this);
+            const evNode = d.node != null ? g.getNodeById(String(d.node)) : null;
+            if (!evNode) return;
+            const infoSrc = (this.outputs || []).findIndex((o) => o.name === "info");
+            const link = g?.links;
+            const fromMe = (evNode.inputs || []).some((i) => {
+              if (!i.link) return false;
+              const lk = link?.[i.link];
+              return lk && lk.origin_id === this.id && lk.origin_slot === infoSrc;
+            });
+            if (!fromMe) return;
+            const info = text.join("\n");
+            this._uiInfo = info;
+            this._applyInfoTitle?.();
+            for (const cand of g?._nodes ?? []) {
+              if (cand === this || typeof cand._applyModelInfo !== "function") continue;
+              const modelsIn = (cand.inputs ?? []).find((i) => i.name === "models");
+              if (modelsIn?.link && resolveListSource(linkSource(cand, modelsIn.link)) === this) {
+                cand._applyModelInfo(info);
+              }
+            }
+            if (this.setDirtyCanvas) this.setDirtyCanvas(true, true);
+          };
+          app.api?.addEventListener?.("executed", onAnyExecuted);
+        }
         const onConfigureFetch = this.onConfigure;
         this.onConfigure = function () {
           const r2 = onConfigureFetch?.apply(this, arguments);
@@ -228,6 +292,7 @@ app.registerExtension({
       const r = onConnectionsChange?.apply(this, arguments);
       if (type === LiteGraph.INPUT) {
         if (isFetch) {
+          this._uiInfo = null; // wiring changed -> previous executed info is stale
           this._updateSocketLabels?.();
           this._updateTitleFromLinks?.();
         } else if (isUnload && this.inputs?.[index]?.name === "models") {
@@ -263,12 +328,7 @@ app.registerExtension({
       const { status, info } = outputsOf(message);
       if (isFetch) {
         this._uiInfo = info;
-        const lines = (info || "").split("\n").filter(Boolean);
-        const first = lines[0] ?? "";
-        if (first && this._canSetTitle()) {
-          this.title = TRUNC(`Fetch: ${first}${lines.length ? ` · ${lines.length} models` : ""}`);
-          this._uiAuto = true;
-        }
+        this._applyInfoTitle?.();
         const outLinks = this.outputs?.[0]?.links ?? [];
         for (const l of outLinks) {
           const link = graphOf(this)?.links?.[l];
