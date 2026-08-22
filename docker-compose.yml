@@ -77,7 +77,7 @@ services:
       #- HIP_FORCE_DEV_KERNARG=1
       #- HSA_FORCE_FINE_GRAIN_PCIE=1
       - PYTORCH_TUNABLEOP_ENABLED=0
-      - PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.8
+      - PYTORCH_HIP_ALLOC_CONF=expandable_segments:False,garbage_collection_threshold:0.8
 
     # 오류 때문에 컨테이너가 중단되지 않도록 버티게 하기
     # entrypoint: ["/bin/bash", "-c", "echo 'Container held for debugging'; sleep infinity"]

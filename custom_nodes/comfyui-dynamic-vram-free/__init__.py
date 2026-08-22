@@ -41,7 +41,7 @@ WEB_DIRECTORY = "./web"
 MAX_INPUTS = 10
 MODEL_LIST_TYPE = "VRAM_MODEL_LIST"
 
-_last_graph_fp = None
+_last_reset = None  # {"prompt_id": str|None, "fp": str}
 _MODEL_NAME_KEYS = {
     "unet_name", "clip_name", "vae_name", "ckpt_name", "lora_name",
     "model_name", "control_net_name", "filename",
@@ -69,6 +69,7 @@ def _graph_fingerprint(prompt) -> str | None:
     return hashlib.sha256(repr(items).encode()).hexdigest()
 
 
+
 def _current_prompt():
     try:
         import server
@@ -76,19 +77,33 @@ def _current_prompt():
         ps = server.PromptServer.instance
         for item in ps.prompt_queue.currently_running.values():
             if len(item) >= 3 and isinstance(item[2], dict):
-                return item[2]
+                pid = None
+                for cand in (item[0] if item else None,
+                             item[1].get("id") if len(item) > 1 and isinstance(item[1], dict) else None,
+                             item[2].get("id"), item[2].get("prompt_id"), item[2].get("__id__")):
+                    if isinstance(cand, str) and cand:
+                        pid = cand
+                        break
+                return item[2], pid
     except Exception:
         pass
-    return None
+    return None, None
 
 
 def _reset_on_switch() -> tuple[bool, str]:
-    global _last_graph_fp
-    fp = _graph_fingerprint(_current_prompt())
+    global _last_reset
+    prompt, pid = _current_prompt()
+    fp = _graph_fingerprint(prompt)
     if fp is None:
         return False, "no prompt access"
-    changed = _last_graph_fp is None or fp != _last_graph_fp
-    _last_graph_fp = fp
+    if _last_reset is None:
+        changed = True
+    elif pid is not None and _last_reset.get("prompt_id") == pid:
+        # same running prompt -> later reset nodes must not be spuriously skipped
+        changed = True
+    else:
+        changed = fp != _last_reset.get("fp")
+    _last_reset = {"prompt_id": pid, "fp": fp}
     return changed, ("first run / workflow changed" if changed else "same workflow")
 
 
