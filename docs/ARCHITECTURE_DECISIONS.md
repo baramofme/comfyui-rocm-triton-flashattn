@@ -1,6 +1,6 @@
 # ROCm Attention Stack — Architecture Decisions
 
-## Base Image: rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorch_release_2.12.0
+## Base Image: rocm/pytorch:rocm7.14_ubuntu26.04_py3.14_pytorch_release_2.12.0
 
 | Layer | Version | Source |
 |-------|---------|--------|
@@ -103,15 +103,17 @@ MLA (Multi-head Latent Attention) for DeepSeek models is another AITER-exclusive
 
 | Property | Value |
 |----------|-------|
-| Version | **0.2.30** (upgraded from 0.2.28) |
-| Installation | `pip install --no-cache-dir comfy-kitchen==0.2.30` |
+| Version | **0.2.31** (upgraded from 0.2.30) |
+| Installation | `pip install --no-cache-dir comfy-kitchen==0.2.31` |
 | Blacklist | Included in ComfyUI-Manager pip blacklist to prevent overwrite |
 
-### Version 0.2.28 → 0.2.30 upgrade
+### Version 0.2.28 → 0.2.30 → 0.2.31 upgrades
 
 **Original pin (0.2.28):** Version 0.2.28 was pinned because 0.2.30 had a verified bug on AMD ROCm gfx1100 GPUs — the `int8_convrot` operation produced solid-color (monochrome) images instead of correct output.
 
 **Upgrade rationale (0.2.30):** User requested upgrade to 0.2.30 despite the known issue. The `int8_convrot` bug should be verified at runtime after rebuild.
+
+**Upgrade rationale (0.2.31):** User requested further upgrade to 0.2.31. The `int8_convrot`/HIP (gfx1100) behavior still needs runtime verification.
 
 **API compatibility patch:** ComfyUI v0.32.0 core `attention.py` calls `comfy_kitchen.int8_attention_is_available()` at import time. This API exists in 0.2.30 but not in 0.2.28. The Dockerfile applies a try/except guard to handle both versions:
 

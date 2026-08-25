@@ -5,12 +5,19 @@ VAE DECODE") behavior — same 16 outputs, same summary format — PLUS a resolu
 selector (aspect_ratio + megapixels + multiple). Independent of the third-party
 pack so pack updates never overwrite it.
 
+Resolution is COMPUTED by the node and emitted on the final_width / final_height
+outputs; there are no width/height inputs. Use "Custom (manual)" + the
+custom_width / custom_height widgets when you want to enter dimensions by hand.
+
 Resolution formula (when aspect_ratio != "Custom (manual)"):
-w = snap64(ceil(sqrt(MP*1e6*AR)/multiple)*multiple), h = snap64(ceil(sqrt(MP*1e6/AR)/multiple)*multiple)
-All final dims are multiples of 64 (LTX-2.5 Conv VAE + half-resolution stage-1).
+w = snap(ceil(sqrt(MP*1e6*AR)/multiple)*multiple), h = snap(ceil(sqrt(MP*1e6/AR)/multiple)*multiple)
+where snap() rounds UP to the selected `multiple` (16..256) and clamps to 256..2048.
+The result is a multiple of `multiple`, so multiple=32 yields 32-grid dims (MiniMax H3),
+multiple=64 yields the LTX-2.5 Conv VAE 64-grid.
 """
 import math
 
+WEB_DIRECTORY = "./web"
 MAX_SEED = (1 << 64) - 1
 
 MODES = (
@@ -38,11 +45,25 @@ ASPECT_RATIOS = {
     "3:4": 3.0 / 4.0,
     "2:3": 2.0 / 3.0,
 }
+MEGAPIXEL_OPTIONS = (
+    0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.98, 1.0, 1.2, 1.5, 1.8, 2.0,
+)
+MULTIPLE_OPTIONS = (16, 32, 64, 128, 256)
+MIN_DIM = 256
+MAX_DIM = 2048
 
 
-def _snap64(v: float) -> int:
-    v = max(256.0, min(2048.0, float(v)))
-    return int(math.ceil(v / 64.0)) * 64
+def _snap(v: float, multiple: int) -> int:
+    """Round v UP to the nearest multiple, clamped to [MIN_DIM, MAX_DIM]."""
+    v = max(float(MIN_DIM), min(float(MAX_DIM), float(v)))
+    return int(math.ceil(v / multiple) * multiple)
+
+
+def _compute_size(ar: float, megapixels: float | str, multiple: int) -> tuple[int, int]:
+    area = float(megapixels) * 1e6
+    w = _snap(math.sqrt(area * ar), multiple)
+    h = _snap(math.sqrt(area / ar), multiple)
+    return w, h
 
 
 def _detect_vram_gib() -> float | None:
@@ -103,10 +124,12 @@ class LTX25Controls:
                 "mode": (list(MODES), {"default": MODES[1]}),
                 "vae_decode_preset": (list(VAE_DECODE_PRESETS), {"default": VAE_DECODE_PRESETS[0]}),
                 "aspect_ratio": (["Custom (manual)"] + list(ASPECT_RATIOS), {"default": "16:9"}),
-                "megapixels": ("FLOAT", {"default": 0.98, "min": 0.1, "max": 4.0, "step": 0.05}),
-                "multiple": ("INT", {"default": 64, "min": 64, "max": 256, "step": 64}),
-                "final_width": ("INT", {"default": 1344, "min": 256, "max": 2048, "step": 64}),
-                "final_height": ("INT", {"default": 768, "min": 256, "max": 2048, "step": 64}),
+                "stage1_megapixels": (list(MEGAPIXEL_OPTIONS), {"default": 0.2}),
+                "stage2_megapixels": (list(MEGAPIXEL_OPTIONS), {"default": 0.5}),
+                "final_megapixels": (list(MEGAPIXEL_OPTIONS), {"default": 0.98}),
+                "multiple": (list(MULTIPLE_OPTIONS), {"default": 64}),
+                "custom_width": ("INT", {"default": 1344, "min": MIN_DIM, "max": MAX_DIM, "step": 64}),
+                "custom_height": ("INT", {"default": 768, "min": MIN_DIM, "max": MAX_DIM, "step": 64}),
                 "timing_mode": (list(TIMING_MODES), {"default": TIMING_MODES[0]}),
                 "fps": ("FLOAT", {"default": 24.0, "min": 1.0, "max": 30.0, "step": 1.0}),
                 "duration_seconds": ("FLOAT", {"default": 15.0, "min": 1.0, "max": 30.0, "step": 0.5}),
@@ -118,29 +141,18 @@ class LTX25Controls:
     RETURN_TYPES = (
         "INT", "INT", "INT", "INT", "INT", "FLOAT", "FLOAT", "BOOLEAN", "BOOLEAN",
         "INT", "INT", "INT", "INT", "INT", "INT", "STRING", "FLOAT",
+        "INT", "INT", "FLOAT", "FLOAT", "FLOAT",
     )
     RETURN_NAMES = (
         "final_width", "final_height", "stage1_width", "stage1_height", "frames",
         "fps", "effective_seconds", "need_first_frame", "need_last_frame",
         "tile_size", "overlap", "temporal_size", "temporal_overlap",
         "stage1_seed", "stage2_seed", "resolved_summary", "duration",
+        "stage2_width", "stage2_height",
+        "stage1_megapixels", "stage2_megapixels", "final_megapixels",
     )
     FUNCTION = "resolve"
     CATEGORY = "LTX-2.5"
-
-    @staticmethod
-    def _require_multiple_of_64(name: str, value: int) -> int:
-        value = int(value)
-        if not 256 <= value <= 2048:
-            raise ValueError(f"{name} must be between 256 and 2048, not {value}.")
-        if value % 64 == 0:
-            return value
-        lower = max(256, (value // 64) * 64)
-        upper = min(2048, lower + 64)
-        raise ValueError(
-            f"{name} must be a multiple of 64 for the half-resolution LTX stage. "
-            f"Use {lower} or {upper}, not {value}."
-        )
 
     @staticmethod
     def _manual_frames(value: int) -> int:
@@ -159,11 +171,13 @@ class LTX25Controls:
         self,
         mode,
         vae_decode_preset,
-        aspect_ratio="Custom (manual)",
-        megapixels=0.98,
+        aspect_ratio="16:9",
+        stage1_megapixels=0.2,
+        stage2_megapixels=0.5,
+        final_megapixels=0.98,
         multiple=64,
-        final_width=1344,
-        final_height=768,
+        custom_width=1344,
+        custom_height=768,
         timing_mode=TIMING_MODES[0],
         fps=24.0,
         duration_seconds=15.0,
@@ -174,15 +188,22 @@ class LTX25Controls:
             raise ValueError(f"Unsupported LTX mode: {mode}")
         if timing_mode not in TIMING_MODES:
             raise ValueError(f"Unsupported timing mode: {timing_mode}")
+        multiple = int(multiple)
 
-        if aspect_ratio != "Custom (manual)":
+        if aspect_ratio == "Custom (manual)":
+            final_width = _snap(custom_width, multiple)
+            final_height = _snap(custom_height, multiple)
+            # custom stages halve down from final, each snapped to multiple (legacy behavior)
+            stage2_width = _snap(final_width // 2, multiple)
+            stage2_height = _snap(final_height // 2, multiple)
+            stage1_width = _snap(stage2_width // 2, multiple)
+            stage1_height = _snap(stage2_height // 2, multiple)
+        else:
             ar = ASPECT_RATIOS[aspect_ratio]
-            area = float(megapixels) * 1e6
-            final_width = _snap64(math.ceil(math.sqrt(area * ar) / multiple) * multiple)
-            final_height = _snap64(math.ceil(math.sqrt(area / ar) / multiple) * multiple)
+            stage1_width, stage1_height = _compute_size(ar, stage1_megapixels, multiple)
+            stage2_width, stage2_height = _compute_size(ar, stage2_megapixels, multiple)
+            final_width, final_height = _compute_size(ar, final_megapixels, multiple)
 
-        final_width = self._require_multiple_of_64("final_width", final_width)
-        final_height = self._require_multiple_of_64("final_height", final_height)
         fps = float(fps)
         if not 1.0 <= fps <= 30.0:
             raise ValueError("fps must be between 1 and 30.")
@@ -224,7 +245,7 @@ class LTX25Controls:
         support = "EXPERIMENTAL" if host == "12GB Safe" else "host profile"
         base_summary = (
             f"{mode} | FINAL {final_width}x{final_height} "
-            f"(stage 1 {final_width // 2}x{final_height // 2}) | "
+            f"(stage 1 {stage1_width}x{stage1_height} -> stage 2 {stage2_width}x{stage2_height} -> FINAL {final_width}x{final_height}) | "
             f"{timing_summary} | {host_label} {support}, detected={detected_text} | "
             f"Conv VAE tiles {tile_size}/{overlap}/{temporal_size}/{temporal_overlap}. "
             "Canvas and timing are user-controlled and are not auto-clamped for VRAM."
@@ -245,10 +266,12 @@ class LTX25Controls:
         return {
             "ui": {"text": [summary]},
             "result": (
-                final_width, final_height, final_width // 2, final_height // 2,
+                final_width, final_height, stage1_width, stage1_height,
                 frames, fps, (frames - 1) / fps, need_first, need_last,
                 tile_size, overlap, temporal_size, temporal_overlap,
                 stage1_seed, stage2_seed, summary, duration_seconds,
+                stage2_width, stage2_height,
+                float(stage1_megapixels), float(stage2_megapixels), float(final_megapixels),
             ),
         }
 
@@ -259,10 +282,10 @@ class LTX25Resolution:
         return {
             "required": {
                 "aspect_ratio": (["Custom (manual)"] + list(ASPECT_RATIOS), {"default": "16:9"}),
-                "megapixels": ("FLOAT", {"default": 0.98, "min": 0.1, "max": 4.0, "step": 0.05}),
-                "multiple": ("INT", {"default": 64, "min": 64, "max": 256, "step": 64}),
-                "final_width": ("INT", {"default": 1344, "min": 256, "max": 2048, "step": 64}),
-                "final_height": ("INT", {"default": 768, "min": 256, "max": 2048, "step": 64}),
+                "megapixels": (list(MEGAPIXEL_OPTIONS), {"default": 0.98}),
+                "multiple": (list(MULTIPLE_OPTIONS), {"default": 64}),
+                "custom_width": ("INT", {"default": 1344, "min": MIN_DIM, "max": MAX_DIM, "step": 64}),
+                "custom_height": ("INT", {"default": 768, "min": MIN_DIM, "max": MAX_DIM, "step": 64}),
             },
         }
 
@@ -271,15 +294,15 @@ class LTX25Resolution:
     FUNCTION = "resolve"
     CATEGORY = "LTX-2.5"
 
-    def resolve(self, aspect_ratio, megapixels, multiple, final_width, final_height):
-        if aspect_ratio != "Custom (manual)":
-            ar = ASPECT_RATIOS[aspect_ratio]
-            area = float(megapixels) * 1e6
-            final_width = _snap64(math.ceil(math.sqrt(area * ar) / multiple) * multiple)
-            final_height = _snap64(math.ceil(math.sqrt(area / ar) / multiple) * multiple)
+    def resolve(self, aspect_ratio="16:9", megapixels=0.98, multiple=64,
+                custom_width=1344, custom_height=768):
+        multiple = int(multiple)
+        if aspect_ratio == "Custom (manual)":
+            final_width = _snap(custom_width, multiple)
+            final_height = _snap(custom_height, multiple)
         else:
-            final_width = _snap64(final_width)
-            final_height = _snap64(final_height)
+            ar = ASPECT_RATIOS[aspect_ratio]
+            final_width, final_height = _compute_size(ar, megapixels, multiple)
         summary = (
             f"{aspect_ratio} {megapixels}MP x{multiple} -> "
             f"{final_width}x{final_height} (stage1 {final_width // 2}x{final_height // 2})"
@@ -296,4 +319,4 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LTX25Resolution": "LTX25 Resolution Selector",
 }
 
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]

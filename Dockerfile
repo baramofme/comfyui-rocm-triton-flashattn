@@ -1,9 +1,9 @@
-FROM rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorch_release_2.12.0
+FROM rocm/pytorch:rocm7.14_ubuntu26.04_py3.14_pytorch_release_2.12.0
 
 # ponytail: ROCm SDK Core lib path for aiter JIT build (linker needs libamdhip64.so, runtime needs libamdhip64.so.7)
-ENV LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/_rocm_sdk_core/lib
+ENV LD_LIBRARY_PATH=/opt/venv/lib/python3.14/site-packages/_rocm_sdk_core/lib
 
-RUN ln -sf /opt/venv/lib/python3.12/site-packages/_rocm_sdk_core/lib/libamdhip64.so.7 /opt/venv/lib/libamdhip64.so
+RUN ln -sf /opt/venv/lib/python3.14/site-packages/_rocm_sdk_core/lib/libamdhip64.so.7 /opt/venv/lib/libamdhip64.so
 
 ENV MIOPEN_FIND_ENFORCE=1 \
     MIOPEN_FIND_MODE=FAST \
@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /workspace
 
-ARG COMFYUI_VERSION=v0.32.0
+ARG COMFYUI_VERSION=v0.33.1
 RUN git clone --depth 1 --branch ${COMFYUI_VERSION} https://github.com/comfyanonymous/ComfyUI.git /workspace
 
 RUN mkdir -p /cache/tunableop /cache/triton /cache/miopen
@@ -62,7 +62,7 @@ RUN echo "torch==2.12.0+rocm7.14" > /opt/venv/pip-constraints.txt
 RUN pip install --no-cache-dir -r /workspace/requirements.txt && \
     find /workspace/custom_nodes -name "requirements.txt" -exec pip install --no-cache-dir -r {} \; 2>/dev/null || true && \
     pip install --no-cache-dir gguf comfyui-manager==4.2.2 && \
-    pip install --no-cache-dir comfy-kitchen==0.2.30
+    pip install --no-cache-dir comfy-kitchen==0.2.31
 
 # ponytail: upgraded from 0.2.28 to 0.2.30 per user request.
 # Note: 0.2.30 HIP 백엔드(gfx1100)에서 int8_convrot 연산이 단색 영상 출력을

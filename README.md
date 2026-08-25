@@ -1,7 +1,7 @@
 # ComfyUI ROCm - Triton & Flash Attention Optimized
 ### AMD GPU 최적화 ComfyUI Docker 이미지
 
-**Latest Version**: `comfyui-rocm:rocm7.14-py3.12-torch2.12.0-triton3.7.1-fa2.8.3-aiter0.1.13-comfy0.32.0`
+**Latest Version**: `comfyui-rocm:rocm7.14-py3.14-torch2.12.0-triton3.7.1-comfy0.33.1`
 
 This project provides a specialized Docker container optimized for running ComfyUI on AMD hardware using **ROCm 7.14** and **PyTorch 2.12**. It features high-performance optimizations including Triton and Flash Attention specifically tuned for ROCm architectures, enabling advanced workflows like INT8 precision (Krea2) and video generation (LTX 2.3 Director).
 
@@ -31,7 +31,7 @@ This project provides a specialized Docker container optimized for running Comfy
 
 ## Build Notes
 
-This Docker image uses the base `rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorch_release_2.12.0` image which already includes PyTorch and ROCm-optimized Triton (3.7.1) with AOTriton 0.11.2 bundled.
+This Docker image uses the base `rocm/pytorch:rocm7.14_ubuntu26.04_py3.14_pytorch_release_2.12.0` image which already includes PyTorch and ROCm-optimized Triton (3.7.1) with AOTriton 0.11.2 bundled.
 
 **SageAttention v2.2.0** (thu-ml/SageAttention **PR #381**, pinned commit `6aa2622f`) is installed as the **default attention backend** for AMD GPUs. `setup.py` auto-detects HIP and skips CUDA extension build; `sageattn()` routes to pure-Triton kernels with `num_stages=1` (avoids the AMD Triton pipelining use-after-free, #365).
 
